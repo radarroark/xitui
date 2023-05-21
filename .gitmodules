@@ -1,0 +1,12 @@
+[submodule "src/deps/libgit2"]
+	path = src/deps/libgit2
+	url = https://github.com/libgit2/libgit2.git
+[submodule "src/deps/libssh2"]
+	path = src/deps/libssh2
+	url = https://github.com/libssh2/libssh2.git
+[submodule "src/deps/mbedtls"]
+	path = src/deps/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls.git
+[submodule "src/deps/zlib"]
+	path = src/deps/zlib
+	url = https://github.com/madler/zlib.git
