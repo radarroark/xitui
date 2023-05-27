@@ -3,6 +3,17 @@
 //! the git CLI, right?
 
 const std = @import("std");
+const builtin = @import("builtin");
+const system = switch (builtin.os.tag) {
+    .linux => std.os.linux,
+    .wasi => std.os.wasi,
+    .uefi => std.os.uefi,
+    else => std.os.system,
+};
+
+const c = @cImport({
+    @cInclude("git2.h");
+});
 
 fn handleSigWinch(_: c_int) callconv(.C) void {
     term.updateSize() catch return;
@@ -44,10 +55,10 @@ pub const Terminal = struct {
     const Size = struct { width: usize, height: usize };
 
     pub fn updateSize(self: *Terminal) !void {
-        var win_size = std.mem.zeroes(std.os.system.winsize);
-        const err = std.os.system.ioctl(term.tty.handle, std.os.system.T.IOCGWINSZ, @ptrToInt(&win_size));
+        var win_size = std.mem.zeroes(system.winsize);
+        const err = system.ioctl(term.tty.handle, system.T.IOCGWINSZ, @ptrToInt(&win_size));
         if (std.os.errno(err) != .SUCCESS) {
-            return std.os.unexpectedErrno(@intToEnum(std.os.system.E, err));
+            return std.os.unexpectedErrno(@intToEnum(system.E, err));
         }
         self.size = Size{
             .height = win_size.ws_row,
@@ -62,17 +73,17 @@ pub const Terminal = struct {
 
         self.raw = self.cooked_termios;
         self.raw.lflag &= ~@as(
-            std.os.system.tcflag_t,
-            std.os.system.ECHO | std.os.system.ICANON | std.os.system.ISIG | std.os.system.IEXTEN,
+            system.tcflag_t,
+            system.ECHO | system.ICANON | system.ISIG | system.IEXTEN,
         );
         self.raw.iflag &= ~@as(
-            std.os.system.tcflag_t,
-            std.os.system.IXON | std.os.system.ICRNL | std.os.system.BRKINT | std.os.system.INPCK | std.os.system.ISTRIP,
+            system.tcflag_t,
+            system.IXON | system.ICRNL | system.BRKINT | system.INPCK | system.ISTRIP,
         );
-        self.raw.oflag &= ~@as(std.os.system.tcflag_t, std.os.system.OPOST);
-        self.raw.cflag |= std.os.system.CS8;
-        self.raw.cc[std.os.system.V.TIME] = 0;
-        self.raw.cc[std.os.system.V.MIN] = 1;
+        self.raw.oflag &= ~@as(system.tcflag_t, system.OPOST);
+        self.raw.cflag |= system.CS8;
+        self.raw.cc[system.V.TIME] = 0;
+        self.raw.cc[system.V.MIN] = 1;
         try std.os.tcsetattr(self.tty.handle, .FLUSH, self.raw);
 
         try hideCursor(writer);
@@ -198,8 +209,8 @@ pub const Page = struct {
     pub fn input(self: *Page, byte: u8) !void {
         if (byte == '\x1B') {
             // non-blocking
-            term.raw.cc[std.os.system.V.TIME] = 1;
-            term.raw.cc[std.os.system.V.MIN] = 0;
+            term.raw.cc[system.V.TIME] = 1;
+            term.raw.cc[system.V.MIN] = 0;
             try std.os.tcsetattr(term.tty.handle, .NOW, term.raw);
 
             var esc_buffer: [8]u8 = undefined;
@@ -219,8 +230,8 @@ fn tick() !void {
     try page.render();
 
     // blocking
-    term.raw.cc[std.os.system.V.TIME] = 0;
-    term.raw.cc[std.os.system.V.MIN] = 1;
+    term.raw.cc[system.V.TIME] = 0;
+    term.raw.cc[system.V.MIN] = 1;
     try std.os.tcsetattr(term.tty.handle, .NOW, term.raw);
 
     var buffer: [1]u8 = undefined;
