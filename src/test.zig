@@ -143,4 +143,36 @@ test "end to end" {
             &parents,
         ));
     }
+
+    // walk the commits
+    {
+        // init walker
+        var walker: ?*c.git_revwalk = null;
+        try expectEqual(0, c.git_revwalk_new(&walker, repo));
+        defer c.git_revwalk_free(walker);
+        try expectEqual(0, c.git_revwalk_sorting(walker, c.GIT_SORT_TIME));
+        try expectEqual(0, c.git_revwalk_push_head(walker));
+
+        // init commits list
+        var commits = std.ArrayList(?*c.git_commit).init(allocator);
+        defer {
+            for (commits.items) |commit| {
+                c.git_commit_free(commit);
+            }
+            commits.deinit();
+        }
+
+        // walk the commits
+        var oid: c.git_oid = undefined;
+        while (0 == c.git_revwalk_next(&oid, walker)) {
+            var commit: ?*c.git_commit = null;
+            try expectEqual(0, c.git_commit_lookup(&commit, repo, &oid));
+            try commits.append(commit);
+        }
+
+        // check the commit messages
+        try expectEqual(2, commits.items.len);
+        try std.testing.expectEqualStrings("add license", std.mem.sliceTo(c.git_commit_message(commits.items[0]), 0));
+        try std.testing.expectEqualStrings("let there be light", std.mem.sliceTo(c.git_commit_message(commits.items[1]), 0));
+    }
 }

@@ -157,28 +157,40 @@ pub const TerminalError = error{
 
 pub const Page = struct {
     allocator: std.mem.Allocator,
+    repo: ?*c.git_repository,
     lines: std.ArrayList([]const u8),
-    index: u8 = 0,
+    index: u32 = 0,
     update_count: u32 = 0,
     last_width: usize = 0,
     last_height: usize = 0,
 
-    pub fn init(allocator: std.mem.Allocator, index: u8, update_count: u32) !Page {
-        const term_width_str = try std.fmt.allocPrint(allocator, "term width: {}", .{term.size.width});
-        errdefer allocator.free(term_width_str);
-        const term_height_str = try std.fmt.allocPrint(allocator, "term height: {}", .{term.size.height});
-        errdefer allocator.free(term_height_str);
-        const update_count_str = try std.fmt.allocPrint(allocator, "update count: {}", .{update_count});
-        errdefer allocator.free(term_height_str);
+    pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository, index: u32, update_count: u32) !Page {
+        // init walker
+        var walker: ?*c.git_revwalk = null;
+        try expectEqual(0, c.git_revwalk_new(&walker, repo));
+        defer c.git_revwalk_free(walker);
+        try expectEqual(0, c.git_revwalk_sorting(walker, c.GIT_SORT_TIME));
+        try expectEqual(0, c.git_revwalk_push_head(walker));
 
+        // init lines
         var lines = std.ArrayList([]const u8).init(allocator);
         errdefer lines.deinit();
-        try lines.append(term_width_str);
-        try lines.append(term_height_str);
-        try lines.append(update_count_str);
+
+        // walk the commits
+        var oid: c.git_oid = undefined;
+        while (0 == c.git_revwalk_next(&oid, walker)) {
+            var commit: ?*c.git_commit = null;
+            try expectEqual(0, c.git_commit_lookup(&commit, repo, &oid));
+            defer c.git_commit_free(commit);
+            // make copy of message so it can live beyond lifetime of commit
+            const message = try std.fmt.allocPrint(allocator, "{s}", .{std.mem.sliceTo(c.git_commit_message(commit), '\n')});
+            errdefer allocator.free(message);
+            try lines.append(message);
+        }
 
         return .{
             .allocator = allocator,
+            .repo = repo,
             .lines = lines,
             .index = index,
             .update_count = update_count,
@@ -197,7 +209,7 @@ pub const Page = struct {
     pub fn render(self: *Page) !void {
         if (self.last_width != term.size.width or self.last_height != term.size.height) {
             self.deinit();
-            self.* = try Page.init(self.allocator, self.index, self.update_count + 1);
+            self.* = try Page.init(self.allocator, self.repo, self.index, self.update_count + 1);
         }
 
         const writer = term.tty.writer();
@@ -220,7 +232,9 @@ pub const Page = struct {
             if (std.mem.eql(u8, esc_slice, "[A")) {
                 self.index -|= 1;
             } else if (std.mem.eql(u8, esc_slice, "[B")) {
-                self.index = std.math.min(self.index + 1, self.lines.items.len - 1);
+                if (self.index + 1 < self.lines.items.len) {
+                    self.index += 1;
+                }
             }
         }
     }
@@ -246,11 +260,29 @@ fn tick() !void {
     }
 }
 
+pub fn expectEqual(expected: anytype, actual: anytype) !void {
+    try std.testing.expectEqual(@as(@TypeOf(actual), expected), actual);
+}
+
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
-    page = try Page.init(allocator, 0, 1);
-    defer page.deinit();
 
+    // start libgit
+    _ = c.git_libgit2_init();
+    defer _ = c.git_libgit2_shutdown();
+
+    // find cwd
+    var cwd_path_buffer = [_]u8{0} ** std.fs.MAX_PATH_BYTES;
+    const cwd_path = @ptrCast([*c]const u8, try std.fs.cwd().realpath(".", &cwd_path_buffer));
+
+    // init repo
+    var repo: ?*c.git_repository = null;
+    try expectEqual(0, c.git_repository_init(&repo, cwd_path, 0));
+    defer c.git_repository_free(repo);
+
+    // init page and term
+    page = try Page.init(allocator, repo, 0, 1);
+    defer page.deinit();
     term = try Terminal.init();
     defer term.deinit();
 
