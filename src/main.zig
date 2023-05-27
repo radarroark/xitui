@@ -148,14 +148,36 @@ fn clear(writer: anytype) !void {
     try writer.writeAll("\x1B[2J");
 }
 
-var term: Terminal = undefined;
-var page: Page = undefined;
-
 pub const TerminalError = error{
     TerminalQuit,
 };
 
-pub const Page = struct {
+var term: Terminal = undefined;
+var widget: Widget = undefined;
+
+pub const Widget = union(enum) {
+    git_info: GitInfo,
+
+    pub fn deinit(self: *Widget) void {
+        switch (self.*) {
+            inline else => |*case| case.deinit(),
+        }
+    }
+
+    pub fn render(self: *Widget) !void {
+        switch (self.*) {
+            inline else => |*case| try case.render(),
+        }
+    }
+
+    pub fn input(self: *Widget, byte: u8) !void {
+        switch (self.*) {
+            inline else => |*case| try case.input(byte),
+        }
+    }
+};
+
+pub const GitInfo = struct {
     allocator: std.mem.Allocator,
     repo: ?*c.git_repository,
     lines: std.ArrayList([]const u8),
@@ -164,7 +186,7 @@ pub const Page = struct {
     last_width: usize = 0,
     last_height: usize = 0,
 
-    pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository, index: u32, update_count: u32) !Page {
+    pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository, index: u32, update_count: u32) !GitInfo {
         // init walker
         var walker: ?*c.git_revwalk = null;
         try expectEqual(0, c.git_revwalk_new(&walker, repo));
@@ -199,17 +221,17 @@ pub const Page = struct {
         };
     }
 
-    pub fn deinit(self: *Page) void {
+    pub fn deinit(self: *GitInfo) void {
         for (self.lines.items) |line| {
             self.allocator.free(line);
         }
         self.lines.deinit();
     }
 
-    pub fn render(self: *Page) !void {
+    pub fn render(self: *GitInfo) !void {
         if (self.last_width != term.size.width or self.last_height != term.size.height) {
             self.deinit();
-            self.* = try Page.init(self.allocator, self.repo, self.index, self.update_count + 1);
+            self.* = try GitInfo.init(self.allocator, self.repo, self.index, self.update_count + 1);
         }
 
         const writer = term.tty.writer();
@@ -218,7 +240,7 @@ pub const Page = struct {
         }
     }
 
-    pub fn input(self: *Page, byte: u8) !void {
+    pub fn input(self: *GitInfo, byte: u8) !void {
         if (byte == '\x1B') {
             // non-blocking
             term.raw.cc[system.V.TIME] = 1;
@@ -241,7 +263,7 @@ pub const Page = struct {
 };
 
 fn tick() !void {
-    try page.render();
+    try widget.render();
 
     // blocking
     term.raw.cc[system.V.TIME] = 0;
@@ -255,7 +277,7 @@ fn tick() !void {
         if (buffer[0] == 'q') {
             return error.TerminalQuit;
         } else {
-            try page.input(buffer[0]);
+            try widget.input(buffer[0]);
         }
     }
 }
@@ -280,9 +302,9 @@ pub fn main() !void {
     try expectEqual(0, c.git_repository_init(&repo, cwd_path, 0));
     defer c.git_repository_free(repo);
 
-    // init page and term
-    page = try Page.init(allocator, repo, 0, 1);
-    defer page.deinit();
+    // init widget and term
+    widget = Widget{ .git_info = try GitInfo.init(allocator, repo, 0, 1) };
+    defer widget.deinit();
     term = try Terminal.init();
     defer term.deinit();
 
