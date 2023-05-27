@@ -138,45 +138,108 @@ fn clear(writer: anytype) !void {
 }
 
 var term: Terminal = undefined;
-var index: usize = 0;
+var page: Page = undefined;
 
 pub const TerminalError = error{
     TerminalQuit,
 };
 
+pub const Page = struct {
+    allocator: std.mem.Allocator,
+    lines: std.ArrayList([]const u8),
+    index: u8 = 0,
+    update_count: u32 = 0,
+    last_width: usize = 0,
+    last_height: usize = 0,
+
+    pub fn init(allocator: std.mem.Allocator, index: u8, update_count: u32) !Page {
+        const term_width_str = try std.fmt.allocPrint(allocator, "term width: {}", .{term.size.width});
+        errdefer allocator.free(term_width_str);
+        const term_height_str = try std.fmt.allocPrint(allocator, "term height: {}", .{term.size.height});
+        errdefer allocator.free(term_height_str);
+        const update_count_str = try std.fmt.allocPrint(allocator, "update count: {}", .{update_count});
+        errdefer allocator.free(term_height_str);
+
+        var lines = std.ArrayList([]const u8).init(allocator);
+        errdefer lines.deinit();
+        try lines.append(term_width_str);
+        try lines.append(term_height_str);
+        try lines.append(update_count_str);
+
+        return .{
+            .allocator = allocator,
+            .lines = lines,
+            .index = index,
+            .update_count = update_count,
+            .last_width = term.size.width,
+            .last_height = term.size.height,
+        };
+    }
+
+    pub fn deinit(self: *Page) void {
+        for (self.lines.items) |line| {
+            self.allocator.free(line);
+        }
+        self.lines.deinit();
+    }
+
+    pub fn render(self: *Page) !void {
+        if (self.last_width != term.size.width or self.last_height != term.size.height) {
+            self.deinit();
+            self.* = try Page.init(self.allocator, self.index, self.update_count + 1);
+        }
+
+        const writer = term.tty.writer();
+        for (self.lines.items, 0..) |line, i| {
+            try writeLine(writer, line, i, term.size.width, self.index == i);
+        }
+    }
+
+    pub fn input(self: *Page, byte: u8) !void {
+        if (byte == '\x1B') {
+            // non-blocking
+            term.raw.cc[std.os.system.V.TIME] = 1;
+            term.raw.cc[std.os.system.V.MIN] = 0;
+            try std.os.tcsetattr(term.tty.handle, .NOW, term.raw);
+
+            var esc_buffer: [8]u8 = undefined;
+            const esc_read = try term.tty.read(&esc_buffer);
+            const esc_slice = esc_buffer[0..esc_read];
+
+            if (std.mem.eql(u8, esc_slice, "[A")) {
+                self.index -|= 1;
+            } else if (std.mem.eql(u8, esc_slice, "[B")) {
+                self.index = std.math.min(self.index + 1, self.lines.items.len - 1);
+            }
+        }
+    }
+};
+
 fn tick() !void {
-    const writer = term.tty.writer();
-    try writeLine(writer, "hello", 0, term.size.width, index == 0);
-    try writeLine(writer, "world", 1, term.size.width, index == 1);
-    try writeLine(writer, "goodbye", 2, term.size.width, index == 2);
-    try writeLine(writer, "world", 3, term.size.width, index == 3);
+    try page.render();
+
+    // blocking
+    term.raw.cc[std.os.system.V.TIME] = 0;
+    term.raw.cc[std.os.system.V.MIN] = 1;
+    try std.os.tcsetattr(term.tty.handle, .NOW, term.raw);
 
     var buffer: [1]u8 = undefined;
-    _ = try term.tty.read(&buffer);
+    const size = try term.tty.read(&buffer);
 
-    if (buffer[0] == 'q') {
-        return error.TerminalQuit;
-    } else if (buffer[0] == '\x1B') {
-        term.raw.cc[std.os.system.V.TIME] = 1;
-        term.raw.cc[std.os.system.V.MIN] = 0;
-        try std.os.tcsetattr(term.tty.handle, .NOW, term.raw);
-
-        var esc_buffer: [8]u8 = undefined;
-        const esc_read = try term.tty.read(&esc_buffer);
-
-        term.raw.cc[std.os.system.V.TIME] = 0;
-        term.raw.cc[std.os.system.V.MIN] = 1;
-        try std.os.tcsetattr(term.tty.handle, .NOW, term.raw);
-
-        if (std.mem.eql(u8, esc_buffer[0..esc_read], "[A")) {
-            index -|= 1;
-        } else if (std.mem.eql(u8, esc_buffer[0..esc_read], "[B")) {
-            index = std.math.min(index + 1, 3);
+    if (size > 0) {
+        if (buffer[0] == 'q') {
+            return error.TerminalQuit;
+        } else {
+            try page.input(buffer[0]);
         }
     }
 }
 
 pub fn main() !void {
+    const allocator = std.heap.page_allocator;
+    page = try Page.init(allocator, 0, 1);
+    defer page.deinit();
+
     term = try Terminal.init();
     defer term.deinit();
 
