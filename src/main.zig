@@ -270,8 +270,15 @@ pub const Rect = struct {
 
     allocator: std.mem.Allocator,
     children: std.ArrayList(Widget),
+    border_style: BorderStyle,
 
-    pub fn init(allocator: std.mem.Allocator, x: usize, y: usize, width: usize, height: usize) Rect {
+    pub const BorderStyle = enum {
+        none,
+        single,
+        double,
+    };
+
+    pub fn init(allocator: std.mem.Allocator, x: usize, y: usize, width: usize, height: usize, border_style: BorderStyle) Rect {
         return .{
             .x = x,
             .y = y,
@@ -279,6 +286,7 @@ pub const Rect = struct {
             .height = height,
             .allocator = allocator,
             .children = std.ArrayList(Widget).init(allocator),
+            .border_style = border_style,
         };
     }
 
@@ -304,22 +312,53 @@ pub const Rect = struct {
         for (horiz_buffer) |*b| {
             b.* = '-';
         }
+        // border style
+        const horiz_line = switch (self.border_style) {
+            .none => " ",
+            .single => "─",
+            .double => "═",
+        };
+        const vert_line = switch (self.border_style) {
+            .none => " ",
+            .single => "│",
+            .double => "║",
+        };
+        const top_left_corner = switch (self.border_style) {
+            .none => " ",
+            .single => "┌",
+            .double => "╔",
+        };
+        const top_right_corner = switch (self.border_style) {
+            .none => " ",
+            .single => "┐",
+            .double => "╗",
+        };
+        const bottom_left_corner = switch (self.border_style) {
+            .none => " ",
+            .single => "└",
+            .double => "╚",
+        };
+        const bottom_right_corner = switch (self.border_style) {
+            .none => " ",
+            .single => "┘",
+            .double => "╝",
+        };
         const writer = term.tty.writer();
         // horiz lines
-        try writeHorizRepeat(writer, "─", x + self.x + 1, y + self.y, max_width, false);
-        try writeHorizRepeat(writer, "─", x + self.x + 1, y + self.y + height + 1, max_width, false);
+        try writeHorizRepeat(writer, horiz_line, x + self.x + 1, y + self.y, max_width, false);
+        try writeHorizRepeat(writer, horiz_line, x + self.x + 1, y + self.y + height + 1, max_width, false);
         // vert lines
-        try writeVertRepeat(writer, "│", x + self.x, y + self.y + 1, height, false);
-        try writeVertRepeat(writer, "│", x + self.x + max_width + 1, y + self.y + 1, height, false);
+        try writeVertRepeat(writer, vert_line, x + self.x, y + self.y + 1, height, false);
+        try writeVertRepeat(writer, vert_line, x + self.x + max_width + 1, y + self.y + 1, height, false);
         // corners
         try moveCursor(writer, x + self.x, y + self.y);
-        try writer.writeAll("┌");
+        try writer.writeAll(top_left_corner);
         try moveCursor(writer, x + self.x + max_width + 1, y + self.y);
-        try writer.writeAll("┐");
+        try writer.writeAll(top_right_corner);
         try moveCursor(writer, x + self.x, y + self.y + height + 1);
-        try writer.writeAll("└");
+        try writer.writeAll(bottom_left_corner);
         try moveCursor(writer, x + self.x + max_width + 1, y + self.y + height + 1);
-        try writer.writeAll("┘");
+        try writer.writeAll(bottom_right_corner);
     }
 
     pub const InputError = error{};
@@ -468,7 +507,7 @@ pub fn main() !void {
     // init widget and term
     const allocator = std.heap.page_allocator;
     //widget = Widget{ .git_info = try GitInfo.init(allocator, repo, 0, 1) };
-    widget = Widget{ .rect = Rect.init(allocator, 0, 0, 10, 5) };
+    widget = Widget{ .rect = Rect.init(allocator, 0, 0, 10, 5, .double) };
     defer widget.deinit();
     try widget.rect.children.append(Widget{ .text = Text.init(0, 0, "this is the first line") });
     try widget.rect.children.append(Widget{ .text = Text.init(0, 0, "you made it to the second line!") });
