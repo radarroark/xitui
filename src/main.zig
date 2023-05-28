@@ -101,19 +101,30 @@ pub const Terminal = struct {
     }
 };
 
-fn writeLine(writer: anytype, txt: []const u8, y: usize, width: usize, selected: bool) !void {
+fn writeHoriz(writer: anytype, txt: []const u8, x: usize, y: usize, selected: bool) !void {
     if (selected) {
         try blueBackground(writer);
     } else {
         try attributeReset(writer);
     }
-    try moveCursor(writer, y, 0);
+    try moveCursor(writer, x, y);
     try writer.writeAll(txt);
-    try writer.writeByteNTimes(' ', width - txt.len);
 }
 
-fn moveCursor(writer: anytype, row: usize, col: usize) !void {
-    _ = try writer.print("\x1B[{};{}H", .{ row + 1, col + 1 });
+fn writeVert(writer: anytype, txt: []const u8, x: usize, y: usize, selected: bool) !void {
+    if (selected) {
+        try blueBackground(writer);
+    } else {
+        try attributeReset(writer);
+    }
+    for (txt, 0..) |ch, i| {
+        try moveCursor(writer, x, y + i);
+        try writer.writeByte(ch);
+    }
+}
+
+fn moveCursor(writer: anytype, x: usize, y: usize) !void {
+    _ = try writer.print("\x1B[{};{}H", .{ y + 1, x + 1 });
 }
 
 fn enterAlt(writer: anytype) !void {
@@ -156,6 +167,7 @@ var term: Terminal = undefined;
 var widget: Widget = undefined;
 
 pub const Widget = union(enum) {
+    text: Text,
     rect: Rect,
     git_info: GitInfo,
 
@@ -167,9 +179,9 @@ pub const Widget = union(enum) {
 
     pub const RenderError = Error("RenderError");
 
-    pub fn render(self: *Widget) RenderError!void {
+    pub fn render(self: *Widget, x: usize, y: usize) RenderError!void {
         switch (self.*) {
-            inline else => |*case| try case.render(),
+            inline else => |*case| try case.render(x, y),
         }
     }
 
@@ -178,6 +190,18 @@ pub const Widget = union(enum) {
     pub fn input(self: *Widget, byte: u8) InputError!void {
         switch (self.*) {
             inline else => |*case| try case.input(byte),
+        }
+    }
+
+    pub fn width(self: Widget) usize {
+        switch (self) {
+            inline else => |case| return case.width,
+        }
+    }
+
+    pub fn height(self: Widget) usize {
+        switch (self) {
+            inline else => |case| return case.height,
         }
     }
 
@@ -190,19 +214,58 @@ pub const Widget = union(enum) {
     }
 };
 
+pub const Text = struct {
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    content: []const u8,
+
+    pub fn init(x: usize, y: usize, content: []const u8) Text {
+        return .{
+            .x = x,
+            .y = y,
+            .width = content.len,
+            .height = 1,
+            .content = content,
+        };
+    }
+
+    pub fn deinit(self: *Text) void {
+        _ = self;
+    }
+
+    pub const RenderError = std.fs.File.WriteError;
+
+    pub fn render(self: *Text, x: usize, y: usize) Widget.RenderError!void {
+        const writer = term.tty.writer();
+        try writeHoriz(writer, self.content, x + self.x, y + self.y, false);
+    }
+
+    pub const InputError = error{};
+
+    pub fn input(self: *Text, byte: u8) !void {
+        _ = self;
+        _ = byte;
+    }
+};
+
 pub const Rect = struct {
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+
+    allocator: std.mem.Allocator,
     children: std.ArrayList(Widget),
 
-    pub fn init(allocator: std.mem.Allocator, x: i32, y: i32, width: i32, height: i32) Rect {
+    pub fn init(allocator: std.mem.Allocator, x: usize, y: usize, width: usize, height: usize) Rect {
         return .{
             .x = x,
             .y = y,
             .width = width,
             .height = height,
+            .allocator = allocator,
             .children = std.ArrayList(Widget).init(allocator),
         };
     }
@@ -214,12 +277,42 @@ pub const Rect = struct {
         self.children.deinit();
     }
 
-    pub const RenderError = error{};
+    pub const RenderError = std.fs.File.WriteError;
 
-    pub fn render(self: *Rect) Widget.RenderError!void {
+    pub fn render(self: *Rect, x: usize, y: usize) Widget.RenderError!void {
+        var max_width: usize = 0;
+        var height: usize = 0;
         for (self.children.items) |*child| {
-            try child.render();
+            try child.render(x + self.x + 1, y + self.y + 1 + height);
+            max_width = std.math.max(max_width, child.width());
+            height += child.height();
         }
+        var horiz_buffer = try self.allocator.alloc(u8, max_width);
+        defer self.allocator.free(horiz_buffer);
+        for (horiz_buffer) |*b| {
+            b.* = '-';
+        }
+        const writer = term.tty.writer();
+        // horiz lines
+        try writeHoriz(writer, horiz_buffer, x + self.x + 1, y + self.y, false);
+        try writeHoriz(writer, horiz_buffer, x + self.x + 1, y + self.y + height + 1, false);
+        // vert lines
+        var vert_buffer = try self.allocator.alloc(u8, height);
+        defer self.allocator.free(vert_buffer);
+        for (vert_buffer) |*b| {
+            b.* = '|';
+        }
+        try writeVert(writer, vert_buffer, x + self.x, y + self.y + 1, false);
+        try writeVert(writer, vert_buffer, x + self.x + max_width + 1, y + self.y + 1, false);
+        // corners
+        try moveCursor(writer, x + self.x, y + self.y);
+        try writer.writeByte('/');
+        try moveCursor(writer, x + self.x + max_width + 1, y + self.y);
+        try writer.writeByte('\\');
+        try moveCursor(writer, x + self.x, y + self.y + height + 1);
+        try writer.writeByte('\\');
+        try moveCursor(writer, x + self.x + max_width + 1, y + self.y + height + 1);
+        try writer.writeByte('/');
     }
 
     pub const InputError = error{};
@@ -232,13 +325,16 @@ pub const Rect = struct {
 };
 
 pub const GitInfo = struct {
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+
     allocator: std.mem.Allocator,
     repo: ?*c.git_repository,
     lines: std.ArrayList([]const u8),
     index: u32 = 0,
     update_count: u32 = 0,
-    last_width: usize = 0,
-    last_height: usize = 0,
 
     pub const InitError = std.mem.Allocator.Error || error{TestExpectedEqual};
 
@@ -267,13 +363,15 @@ pub const GitInfo = struct {
         }
 
         return .{
+            .x = 0,
+            .y = 0,
+            .width = term.size.width,
+            .height = term.size.height,
             .allocator = allocator,
             .repo = repo,
             .lines = lines,
             .index = index,
             .update_count = update_count,
-            .last_width = term.size.width,
-            .last_height = term.size.height,
         };
     }
 
@@ -286,15 +384,15 @@ pub const GitInfo = struct {
 
     pub const RenderError = InitError || std.fs.File.WriteError;
 
-    pub fn render(self: *GitInfo) RenderError!void {
-        if (self.last_width != term.size.width or self.last_height != term.size.height) {
+    pub fn render(self: *GitInfo, x: usize, y: usize) RenderError!void {
+        if (self.width != term.size.width or self.height != term.size.height) {
             self.deinit();
             self.* = try GitInfo.init(self.allocator, self.repo, self.index, self.update_count + 1);
         }
 
         const writer = term.tty.writer();
         for (self.lines.items, 0..) |line, i| {
-            try writeLine(writer, line, i, term.size.width, self.index == i);
+            try writeHoriz(writer, line, x, y + i, self.index == i);
         }
     }
 
@@ -323,7 +421,7 @@ pub const GitInfo = struct {
 };
 
 fn tick() !void {
-    try widget.render();
+    try widget.render(0, 0);
 
     // blocking
     term.raw.cc[system.V.TIME] = 0;
@@ -362,8 +460,12 @@ pub fn main() !void {
 
     // init widget and term
     const allocator = std.heap.page_allocator;
-    widget = Widget{ .git_info = try GitInfo.init(allocator, repo, 0, 1) };
+    //widget = Widget{ .git_info = try GitInfo.init(allocator, repo, 0, 1) };
+    widget = Widget{ .rect = Rect.init(allocator, 1, 1, 10, 5) };
     defer widget.deinit();
+    try widget.rect.children.append(Widget{ .text = Text.init(0, 0, "this is the first line") });
+    try widget.rect.children.append(Widget{ .text = Text.init(0, 0, "you made it to the second line!") });
+    try widget.rect.children.append(Widget{ .text = Text.init(0, 0, "and here's the third") });
     term = try Terminal.init();
     defer term.deinit();
 
