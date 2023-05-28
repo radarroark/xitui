@@ -111,15 +111,27 @@ fn writeHoriz(writer: anytype, txt: []const u8, x: usize, y: usize, selected: bo
     try writer.writeAll(txt);
 }
 
-fn writeVert(writer: anytype, txt: []const u8, x: usize, y: usize, selected: bool) !void {
+fn writeHorizRepeat(writer: anytype, char: []const u8, x: usize, y: usize, width: usize, selected: bool) !void {
     if (selected) {
         try blueBackground(writer);
     } else {
         try attributeReset(writer);
     }
-    for (txt, 0..) |ch, i| {
+    for (0..width) |i| {
+        try moveCursor(writer, x + i, y);
+        try writer.writeAll(char);
+    }
+}
+
+fn writeVertRepeat(writer: anytype, char: []const u8, x: usize, y: usize, height: usize, selected: bool) !void {
+    if (selected) {
+        try blueBackground(writer);
+    } else {
+        try attributeReset(writer);
+    }
+    for (0..height) |i| {
         try moveCursor(writer, x, y + i);
-        try writer.writeByte(ch);
+        try writer.writeAll(char);
     }
 }
 
@@ -294,25 +306,20 @@ pub const Rect = struct {
         }
         const writer = term.tty.writer();
         // horiz lines
-        try writeHoriz(writer, horiz_buffer, x + self.x + 1, y + self.y, false);
-        try writeHoriz(writer, horiz_buffer, x + self.x + 1, y + self.y + height + 1, false);
+        try writeHorizRepeat(writer, "─", x + self.x + 1, y + self.y, max_width, false);
+        try writeHorizRepeat(writer, "─", x + self.x + 1, y + self.y + height + 1, max_width, false);
         // vert lines
-        var vert_buffer = try self.allocator.alloc(u8, height);
-        defer self.allocator.free(vert_buffer);
-        for (vert_buffer) |*b| {
-            b.* = '|';
-        }
-        try writeVert(writer, vert_buffer, x + self.x, y + self.y + 1, false);
-        try writeVert(writer, vert_buffer, x + self.x + max_width + 1, y + self.y + 1, false);
+        try writeVertRepeat(writer, "│", x + self.x, y + self.y + 1, height, false);
+        try writeVertRepeat(writer, "│", x + self.x + max_width + 1, y + self.y + 1, height, false);
         // corners
         try moveCursor(writer, x + self.x, y + self.y);
-        try writer.writeByte('/');
+        try writer.writeAll("┌");
         try moveCursor(writer, x + self.x + max_width + 1, y + self.y);
-        try writer.writeByte('\\');
+        try writer.writeAll("┐");
         try moveCursor(writer, x + self.x, y + self.y + height + 1);
-        try writer.writeByte('\\');
+        try writer.writeAll("└");
         try moveCursor(writer, x + self.x + max_width + 1, y + self.y + height + 1);
-        try writer.writeByte('/');
+        try writer.writeAll("┘");
     }
 
     pub const InputError = error{};
@@ -461,7 +468,7 @@ pub fn main() !void {
     // init widget and term
     const allocator = std.heap.page_allocator;
     //widget = Widget{ .git_info = try GitInfo.init(allocator, repo, 0, 1) };
-    widget = Widget{ .rect = Rect.init(allocator, 1, 1, 10, 5) };
+    widget = Widget{ .rect = Rect.init(allocator, 0, 0, 10, 5) };
     defer widget.deinit();
     try widget.rect.children.append(Widget{ .text = Text.init(0, 0, "this is the first line") });
     try widget.rect.children.append(Widget{ .text = Text.init(0, 0, "you made it to the second line!") });
