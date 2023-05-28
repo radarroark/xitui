@@ -156,6 +156,7 @@ var term: Terminal = undefined;
 var widget: Widget = undefined;
 
 pub const Widget = union(enum) {
+    rect: Rect,
     git_info: GitInfo,
 
     pub fn deinit(self: *Widget) void {
@@ -164,15 +165,68 @@ pub const Widget = union(enum) {
         }
     }
 
-    pub fn render(self: *Widget) !void {
+    pub const RenderError = Error("RenderError");
+
+    pub fn render(self: *Widget) RenderError!void {
         switch (self.*) {
             inline else => |*case| try case.render(),
         }
     }
 
-    pub fn input(self: *Widget, byte: u8) !void {
+    pub const InputError = Error("InputError");
+
+    pub fn input(self: *Widget, byte: u8) InputError!void {
         switch (self.*) {
             inline else => |*case| try case.input(byte),
+        }
+    }
+
+    fn Error(comptime field_name: []const u8) type {
+        var err = error{};
+        inline for (@typeInfo(Widget).Union.fields) |field| {
+            err = err || @field(field.type, field_name);
+        }
+        return err;
+    }
+};
+
+pub const Rect = struct {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    children: std.ArrayList(Widget),
+
+    pub fn init(allocator: std.mem.Allocator, x: i32, y: i32, width: i32, height: i32) Rect {
+        return .{
+            .x = x,
+            .y = y,
+            .width = width,
+            .height = height,
+            .children = std.ArrayList(Widget).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *Rect) void {
+        for (self.children.items) |*child| {
+            child.deinit();
+        }
+        self.children.deinit();
+    }
+
+    pub const RenderError = error{};
+
+    pub fn render(self: *Rect) Widget.RenderError!void {
+        for (self.children.items) |*child| {
+            try child.render();
+        }
+    }
+
+    pub const InputError = error{};
+
+    pub fn input(self: *Rect, byte: u8) Widget.InputError!void {
+        for (self.children.items) |*child| {
+            try child.input(byte);
         }
     }
 };
@@ -185,6 +239,8 @@ pub const GitInfo = struct {
     update_count: u32 = 0,
     last_width: usize = 0,
     last_height: usize = 0,
+
+    pub const InitError = std.mem.Allocator.Error || error{TestExpectedEqual};
 
     pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository, index: u32, update_count: u32) !GitInfo {
         // init walker
@@ -228,7 +284,9 @@ pub const GitInfo = struct {
         self.lines.deinit();
     }
 
-    pub fn render(self: *GitInfo) !void {
+    pub const RenderError = InitError || std.fs.File.WriteError;
+
+    pub fn render(self: *GitInfo) RenderError!void {
         if (self.last_width != term.size.width or self.last_height != term.size.height) {
             self.deinit();
             self.* = try GitInfo.init(self.allocator, self.repo, self.index, self.update_count + 1);
@@ -240,7 +298,9 @@ pub const GitInfo = struct {
         }
     }
 
-    pub fn input(self: *GitInfo, byte: u8) !void {
+    pub const InputError = std.os.TermiosSetError || std.fs.File.ReadError;
+
+    pub fn input(self: *GitInfo, byte: u8) Widget.InputError!void {
         if (byte == '\x1B') {
             // non-blocking
             term.raw.cc[system.V.TIME] = 1;
@@ -287,8 +347,6 @@ pub fn expectEqual(expected: anytype, actual: anytype) !void {
 }
 
 pub fn main() !void {
-    const allocator = std.heap.page_allocator;
-
     // start libgit
     _ = c.git_libgit2_init();
     defer _ = c.git_libgit2_shutdown();
@@ -303,6 +361,7 @@ pub fn main() !void {
     defer c.git_repository_free(repo);
 
     // init widget and term
+    const allocator = std.heap.page_allocator;
     widget = Widget{ .git_info = try GitInfo.init(allocator, repo, 0, 1) };
     defer widget.deinit();
     term = try Terminal.init();
