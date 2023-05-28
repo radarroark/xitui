@@ -17,7 +17,6 @@ const c = @cImport({
 
 fn handleSigWinch(_: c_int) callconv(.C) void {
     term.updateSize() catch return;
-    tick() catch return;
 }
 
 pub const Terminal = struct {
@@ -25,6 +24,8 @@ pub const Terminal = struct {
     cooked_termios: std.os.termios = undefined,
     raw: std.os.termios = undefined,
     size: Size = undefined,
+
+    const Size = struct { width: usize, height: usize };
 
     pub fn init() !Terminal {
         var tty = try std.fs.cwd().openFile("/dev/tty", .{ .mode = .read_write });
@@ -51,8 +52,6 @@ pub const Terminal = struct {
         self.cook() catch {};
         self.tty.close();
     }
-
-    const Size = struct { width: usize, height: usize };
 
     pub fn updateSize(self: *Terminal) !void {
         var win_size = std.mem.zeroes(system.winsize);
@@ -88,37 +87,46 @@ pub const Terminal = struct {
 
         try hideCursor(writer);
         try enterAlt(writer);
-        try clear(writer);
+        try clearStyle(writer);
     }
 
     fn cook(self: *Terminal) !void {
         const writer = self.tty.writer();
-        try clear(writer);
+        try clearStyle(writer);
         try leaveAlt(writer);
         try showCursor(writer);
         try attributeReset(writer);
         try std.os.tcsetattr(self.tty.handle, .FLUSH, self.cooked_termios);
     }
+
+    pub fn write(self: *Terminal, txt: []const u8, x: usize, y: usize) !void {
+        if (y >= 0 and y < term.size.height) {
+            const writer = self.tty.writer();
+            try moveCursor(writer, x, y);
+            try writer.writeAll(txt);
+        }
+    }
+
+    pub fn writeHoriz(self: Terminal, char: []const u8, x: usize, y: usize, width: usize) !void {
+        if (y >= 0 and y < self.size.height) {
+            const writer = self.tty.writer();
+            try moveCursor(writer, x, y);
+            for (0..width) |_| {
+                try writer.writeAll(char);
+            }
+        }
+    }
+
+    pub fn writeVert(self: Terminal, char: []const u8, x: usize, y: usize, height: usize) !void {
+        if (y >= 0 and y < self.size.height) {
+            const writer = self.tty.writer();
+            for (0..height) |i| {
+                try moveCursor(writer, x, y + i);
+                try writer.writeAll(char);
+            }
+        }
+    }
 };
-
-fn writeHoriz(writer: anytype, txt: []const u8, x: usize, y: usize) !void {
-    try moveCursor(writer, x, y);
-    try writer.writeAll(txt);
-}
-
-fn writeHorizRepeat(writer: anytype, char: []const u8, x: usize, y: usize, width: usize) !void {
-    for (0..width) |i| {
-        try moveCursor(writer, x + i, y);
-        try writer.writeAll(char);
-    }
-}
-
-fn writeVertRepeat(writer: anytype, char: []const u8, x: usize, y: usize, height: usize) !void {
-    for (0..height) |i| {
-        try moveCursor(writer, x, y + i);
-        try writer.writeAll(char);
-    }
-}
 
 fn moveCursor(writer: anytype, x: usize, y: usize) !void {
     _ = try writer.print("\x1B[{};{}H", .{ y + 1, x + 1 });
@@ -152,17 +160,41 @@ fn blueBackground(writer: anytype) !void {
     try writer.writeAll("\x1B[44m");
 }
 
-fn clear(writer: anytype) !void {
+fn clearStyle(writer: anytype) !void {
     try writer.writeAll("\x1B[2J");
+}
+
+fn clearRect(writer: anytype, rect: Rect) !void {
+    for (0..rect.height) |i| {
+        try moveCursor(writer, rect.x, rect.y + i);
+        for (0..rect.width) |_| {
+            try writer.writeByte(' ');
+        }
+    }
+}
+
+pub fn expectEqual(expected: anytype, actual: anytype) !void {
+    try std.testing.expectEqual(@as(@TypeOf(actual), expected), actual);
 }
 
 pub const TerminalError = error{
     TerminalQuit,
 };
 
+pub const Rect = struct {
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+};
+
 var term: Terminal = undefined;
 var root: Widget = undefined;
 
+// the top-level widget type.
+// for now, this is just a union. in the future we'll probably
+// need a vtable so new types can be made without changing it.
+// this will be fine for a while though.
 pub const Widget = union(enum) {
     text: Text,
     box: Box,
@@ -192,16 +224,21 @@ pub const Widget = union(enum) {
 
     pub fn width(self: Widget) usize {
         switch (self) {
-            inline else => |case| return case.width,
+            inline else => |case| return case.rect.width,
         }
     }
 
     pub fn height(self: Widget) usize {
         switch (self) {
-            inline else => |case| return case.height,
+            inline else => |case| return case.rect.height,
         }
     }
 
+    // returns error union that combines the error unions
+    // from all the branches of Widget. we have to do this
+    // because zig can't infer the error sets above due to
+    // the use of recursion. is this radar's first use of
+    // metaprogramming in zig? looks like it!
     fn Error(comptime field_name: []const u8) type {
         var err = error{};
         inline for (@typeInfo(Widget).Union.fields) |field| {
@@ -212,18 +249,17 @@ pub const Widget = union(enum) {
 };
 
 pub const Text = struct {
-    x: usize,
-    y: usize,
-    width: usize,
-    height: usize,
+    rect: Rect,
     content: []const u8,
 
     pub fn init(x: usize, y: usize, content: []const u8) Text {
         return .{
-            .x = x,
-            .y = y,
-            .width = content.len,
-            .height = 1,
+            .rect = .{
+                .x = x,
+                .y = y,
+                .width = content.len,
+                .height = 1,
+            },
             .content = content,
         };
     }
@@ -235,8 +271,7 @@ pub const Text = struct {
     pub const RenderError = std.fs.File.WriteError;
 
     pub fn render(self: *Text, x: usize, y: usize) Widget.RenderError!void {
-        const writer = term.tty.writer();
-        try writeHoriz(writer, self.content, x + self.x, y + self.y);
+        try term.write(self.content, x + self.rect.x, y + self.rect.y);
     }
 
     pub const InputError = error{};
@@ -248,11 +283,7 @@ pub const Text = struct {
 };
 
 pub const Box = struct {
-    x: usize,
-    y: usize,
-    width: usize,
-    height: usize,
-
+    rect: Rect,
     allocator: std.mem.Allocator,
     children: std.ArrayList(Widget),
     border_style: BorderStyle,
@@ -263,12 +294,9 @@ pub const Box = struct {
         double,
     };
 
-    pub fn init(allocator: std.mem.Allocator, x: usize, y: usize, width: usize, height: usize, border_style: BorderStyle) Box {
+    pub fn init(allocator: std.mem.Allocator, rect: Rect, border_style: BorderStyle) Box {
         return .{
-            .x = x,
-            .y = y,
-            .width = width,
-            .height = height,
+            .rect = rect,
             .allocator = allocator,
             .children = std.ArrayList(Widget).init(allocator),
             .border_style = border_style,
@@ -285,10 +313,12 @@ pub const Box = struct {
     pub const RenderError = std.fs.File.WriteError;
 
     pub fn render(self: *Box, x: usize, y: usize) Widget.RenderError!void {
+        // render the children
+        // TODO: this lays the children out vertically -- support horizontal layout as well
         var width: usize = 0;
         var height: usize = 0;
         for (self.children.items) |*child| {
-            try child.render(x + self.x + 1, y + self.y + 1 + height);
+            try child.render(x + self.rect.x + 1, y + self.rect.y + 1 + height);
             width = std.math.max(width, child.width());
             height += child.height();
         }
@@ -297,8 +327,8 @@ pub const Box = struct {
         for (horiz_buffer) |*b| {
             b.* = '-';
         }
-        if (width > self.width) self.width = width;
-        if (height > self.height) self.height = height + 2;
+        if (width > self.rect.width) self.rect.width = width;
+        if (height > self.rect.height) self.rect.height = height + 2;
         // border style
         const horiz_line = switch (self.border_style) {
             .none => " ",
@@ -330,22 +360,17 @@ pub const Box = struct {
             .single => "┘",
             .double => "╝",
         };
-        const writer = term.tty.writer();
         // horiz lines
-        try writeHorizRepeat(writer, horiz_line, x + self.x + 1, y + self.y, width);
-        try writeHorizRepeat(writer, horiz_line, x + self.x + 1, y + self.y + height + 1, width);
+        try term.writeHoriz(horiz_line, x + self.rect.x + 1, y + self.rect.y, width);
+        try term.writeHoriz(horiz_line, x + self.rect.x + 1, y + self.rect.y + height + 1, width);
         // vert lines
-        try writeVertRepeat(writer, vert_line, x + self.x, y + self.y + 1, height);
-        try writeVertRepeat(writer, vert_line, x + self.x + width + 1, y + self.y + 1, height);
+        try term.writeVert(vert_line, x + self.rect.x, y + self.rect.y + 1, height);
+        try term.writeVert(vert_line, x + self.rect.x + width + 1, y + self.rect.y + 1, height);
         // corners
-        try moveCursor(writer, x + self.x, y + self.y);
-        try writer.writeAll(top_left_corner);
-        try moveCursor(writer, x + self.x + width + 1, y + self.y);
-        try writer.writeAll(top_right_corner);
-        try moveCursor(writer, x + self.x, y + self.y + height + 1);
-        try writer.writeAll(bottom_left_corner);
-        try moveCursor(writer, x + self.x + width + 1, y + self.y + height + 1);
-        try writer.writeAll(bottom_right_corner);
+        try term.write(top_left_corner, x + self.rect.x, y + self.rect.y);
+        try term.write(top_right_corner, x + self.rect.x + width + 1, y + self.rect.y);
+        try term.write(bottom_left_corner, x + self.rect.x, y + self.rect.y + height + 1);
+        try term.write(bottom_right_corner, x + self.rect.x + width + 1, y + self.rect.y + height + 1);
     }
 
     pub const InputError = error{};
@@ -358,20 +383,13 @@ pub const Box = struct {
 };
 
 pub const GitInfo = struct {
-    x: usize,
-    y: usize,
-    width: usize,
-    height: usize,
-
+    rect: Rect,
     allocator: std.mem.Allocator,
     repo: ?*c.git_repository,
     lines: std.ArrayList([]const u8),
     index: u32 = 0,
-    update_count: u32 = 0,
 
-    pub const InitError = std.mem.Allocator.Error || error{TestExpectedEqual};
-
-    pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository, index: u32, update_count: u32) !GitInfo {
+    pub fn init(allocator: std.mem.Allocator, rect: Rect, repo: ?*c.git_repository, index: u32) !GitInfo {
         // init walker
         var walker: ?*c.git_revwalk = null;
         try expectEqual(0, c.git_revwalk_new(&walker, repo));
@@ -396,15 +414,11 @@ pub const GitInfo = struct {
         }
 
         return .{
-            .x = 0,
-            .y = 0,
-            .width = term.size.width,
-            .height = term.size.height,
+            .rect = rect,
             .allocator = allocator,
             .repo = repo,
             .lines = lines,
             .index = index,
-            .update_count = update_count,
         };
     }
 
@@ -415,20 +429,15 @@ pub const GitInfo = struct {
         self.lines.deinit();
     }
 
-    pub const RenderError = InitError || std.fs.File.WriteError;
+    pub const RenderError = std.mem.Allocator.Error || std.fs.File.WriteError;
 
     pub fn render(self: *GitInfo, x: usize, y: usize) RenderError!void {
-        if (self.width != term.size.width or self.height != term.size.height) {
-            self.deinit();
-            self.* = try GitInfo.init(self.allocator, self.repo, self.index, self.update_count + 1);
-        }
-
         var total_height: usize = 0;
         for (self.lines.items, 0..) |line, i| {
-            var widget = Widget{ .box = Box.init(self.allocator, 0, 0, 0, 0, if (self.index == i) .double else .single) };
+            var widget = Widget{ .box = Box.init(self.allocator, .{ .x = 0, .y = 0, .width = 0, .height = 0 }, if (self.index == i) .double else .single) };
             defer widget.deinit();
             try widget.box.children.append(Widget{ .text = Text.init(0, 0, line) });
-            try widget.render(x + self.x, y + self.y + total_height);
+            try widget.render(x + self.rect.x, y + self.rect.y + total_height);
             total_height += widget.height();
         }
     }
@@ -437,11 +446,6 @@ pub const GitInfo = struct {
 
     pub fn input(self: *GitInfo, byte: u8) Widget.InputError!void {
         if (byte == '\x1B') {
-            // non-blocking
-            term.raw.cc[system.V.TIME] = 1;
-            term.raw.cc[system.V.MIN] = 0;
-            try std.os.tcsetattr(term.tty.handle, .NOW, term.raw);
-
             var esc_buffer: [8]u8 = undefined;
             const esc_read = try term.tty.read(&esc_buffer);
             const esc_slice = esc_buffer[0..esc_read];
@@ -458,12 +462,13 @@ pub const GitInfo = struct {
 };
 
 fn tick() !void {
-    try root.render(0, 0);
+    const root_rect = .{ .x = 0, .y = 0, .width = term.size.width, .height = term.size.height };
+    if (root.width() != root_rect.width or root.height() != root_rect.height) {
+        root.git_info.rect = root_rect;
+        try clearRect(term.tty.writer(), root_rect);
+    }
 
-    // blocking
-    term.raw.cc[system.V.TIME] = 0;
-    term.raw.cc[system.V.MIN] = 1;
-    try std.os.tcsetattr(term.tty.handle, .NOW, term.raw);
+    try root.render(0, 0);
 
     var buffer: [1]u8 = undefined;
     const size = try term.tty.read(&buffer);
@@ -475,10 +480,6 @@ fn tick() !void {
             try root.input(buffer[0]);
         }
     }
-}
-
-pub fn expectEqual(expected: anytype, actual: anytype) !void {
-    try std.testing.expectEqual(@as(@TypeOf(actual), expected), actual);
 }
 
 pub fn main() !void {
@@ -495,19 +496,27 @@ pub fn main() !void {
     try expectEqual(0, c.git_repository_init(&repo, cwd_path, 0));
     defer c.git_repository_free(repo);
 
-    // init root widget and term
-    const allocator = std.heap.page_allocator;
-    root = Widget{ .git_info = try GitInfo.init(allocator, repo, 0, 1) };
-    defer root.deinit();
+    // init term
     term = try Terminal.init();
     defer term.deinit();
+
+    // init root widget
+    const allocator = std.heap.page_allocator;
+    root = Widget{ .git_info = try GitInfo.init(allocator, .{ .x = 0, .y = 0, .width = term.size.width, .height = term.size.height }, repo, 0) };
+    defer root.deinit();
+
+    // non-blocking
+    term.raw.cc[system.V.TIME] = 1;
+    term.raw.cc[system.V.MIN] = 0;
+    try std.os.tcsetattr(term.tty.handle, .NOW, term.raw);
 
     while (true) {
         tick() catch |err| {
             switch (err) {
-                error.TerminalQuit => return,
+                error.TerminalQuit => break,
                 else => return err,
             }
         };
+        std.time.sleep(5000000); // TODO: do variable sleep with target frame rate
     }
 }
