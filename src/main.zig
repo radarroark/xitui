@@ -181,6 +181,50 @@ pub const TerminalError = error{
     TerminalQuit,
 };
 
+const TRIM_BUFFER_SIZE = 1024;
+
+/// copies `in` to `out` up to `max_len` unicode codepoints.
+/// escape codes are preserved and do not count towards the total.
+fn trim(in: []const u8, max_len: u64, out: *[TRIM_BUFFER_SIZE]u8) ![]u8 {
+    var utf8 = (try std.unicode.Utf8View.init(in)).iterator();
+    var count: u64 = 0;
+    var esc_code_len: u32 = 0;
+    var i: u32 = 0;
+    while (utf8.nextCodepointSlice()) |codepoint| {
+        if (esc_code_len > 0) {
+            if (codepoint.len == 1) {
+                switch (codepoint[0]) {
+                    '\x40'...'\x7E' => {
+                        if (esc_code_len == 1) {
+                            esc_code_len = 2;
+                        } else {
+                            esc_code_len = 0;
+                        }
+                    },
+                    else => {},
+                }
+            } else {
+                esc_code_len = 0;
+            }
+        } else if (std.mem.eql(u8, codepoint, "\x1B")) {
+            esc_code_len = 1;
+        } else {
+            count += 1;
+        }
+        if (i + codepoint.len > out.len) {
+            break;
+        }
+        for (codepoint) |byte| {
+            out[i] = byte;
+            i += 1;
+        }
+        if (count == max_len) {
+            break;
+        }
+    }
+    return out[0..i];
+}
+
 pub const Rect = struct {
     x: usize,
     y: usize,
@@ -268,10 +312,12 @@ pub const Text = struct {
         _ = self;
     }
 
-    pub const RenderError = std.fs.File.WriteError;
+    pub const RenderError = std.fs.File.WriteError || error{InvalidUtf8};
 
     pub fn render(self: *Text, x: usize, y: usize) Widget.RenderError!void {
-        try term.write(self.content, x + self.rect.x, y + self.rect.y);
+        var buffer = [_]u8{0} ** TRIM_BUFFER_SIZE;
+        const text = try trim(self.content, self.rect.width, &buffer);
+        try term.write(text, x + self.rect.x, y + self.rect.y);
     }
 
     pub const InputError = error{};
@@ -429,16 +475,21 @@ pub const GitInfo = struct {
         self.lines.deinit();
     }
 
-    pub const RenderError = std.mem.Allocator.Error || std.fs.File.WriteError;
+    pub const RenderError = std.mem.Allocator.Error || Text.RenderError;
 
     pub fn render(self: *GitInfo, x: usize, y: usize) RenderError!void {
         var total_height: usize = 0;
         for (self.lines.items, 0..) |line, i| {
-            var widget = Widget{ .box = Box.init(self.allocator, .{ .x = 0, .y = 0, .width = 0, .height = 0 }, if (self.index == i) .double else .single) };
-            defer widget.deinit();
-            try widget.box.children.append(Widget{ .text = Text.init(0, 0, line) });
-            try widget.render(x + self.rect.x, y + self.rect.y + total_height);
-            total_height += widget.height();
+            var box_widget = Widget{ .box = Box.init(self.allocator, .{ .x = 0, .y = 0, .width = 0, .height = 0 }, if (self.index == i) .double else .single) };
+            defer box_widget.deinit();
+            var text_widget = Widget{ .text = Text.init(0, 0, line) };
+            text_widget.text.rect.width = std.math.min(
+                text_widget.text.rect.width,
+                self.rect.width - 2,
+            );
+            try box_widget.box.children.append(text_widget);
+            try box_widget.render(x + self.rect.x, y + self.rect.y + total_height);
+            total_height += box_widget.height();
         }
     }
 
