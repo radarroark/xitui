@@ -216,10 +216,11 @@ fn trim(in: []const u8, max_len: u64, out: *[TRIM_BUFFER_SIZE]u8) ![]u8 {
         }
         if (i + codepoint.len > out.len) {
             break;
-        }
-        for (codepoint) |byte| {
-            out[i] = byte;
-            i += 1;
+        } else {
+            for (codepoint) |byte| {
+                out[i] = byte;
+                i += 1;
+            }
         }
     }
     return out[0..i];
