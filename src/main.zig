@@ -380,8 +380,8 @@ pub const Box = struct {
         for (horiz_buffer) |*b| {
             b.* = '-';
         }
-        if (width > self.rect.width) self.rect.width = width;
-        if (height > self.rect.height) self.rect.height = height + 2;
+        self.rect.width = width + 2;
+        self.rect.height = height + 2;
         // border style
         const horiz_line = switch (self.border_style) {
             .none => " ",
