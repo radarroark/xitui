@@ -188,28 +188,31 @@ const TRIM_BUFFER_SIZE = 1024;
 fn trim(in: []const u8, max_len: u64, out: *[TRIM_BUFFER_SIZE]u8) ![]u8 {
     var utf8 = (try std.unicode.Utf8View.init(in)).iterator();
     var count: u64 = 0;
-    var esc_code_len: u32 = 0;
+    const EscCodeStatus = enum { none, start, middle };
+    var esc_code_status = EscCodeStatus.none;
     var i: u32 = 0;
     while (utf8.nextCodepointSlice()) |codepoint| {
-        if (esc_code_len > 0) {
-            if (codepoint.len == 1) {
+        switch (esc_code_status) {
+            .none => {
+                if (std.mem.eql(u8, codepoint, "\x1B")) {
+                    esc_code_status = .start;
+                } else {
+                    if (count == max_len) {
+                        continue;
+                    } else {
+                        count += 1;
+                    }
+                }
+            },
+            .start => {
+                esc_code_status = if (std.mem.eql(u8, codepoint, "[")) .middle else .none;
+            },
+            .middle => {
                 switch (codepoint[0]) {
-                    '\x40'...'\x7E' => {
-                        if (esc_code_len == 1) {
-                            esc_code_len = 2;
-                        } else {
-                            esc_code_len = 0;
-                        }
-                    },
+                    '\x40'...'\x7E' => esc_code_status = .none,
                     else => {},
                 }
-            } else {
-                esc_code_len = 0;
-            }
-        } else if (std.mem.eql(u8, codepoint, "\x1B")) {
-            esc_code_len = 1;
-        } else {
-            count += 1;
+            },
         }
         if (i + codepoint.len > out.len) {
             break;
@@ -218,11 +221,14 @@ fn trim(in: []const u8, max_len: u64, out: *[TRIM_BUFFER_SIZE]u8) ![]u8 {
             out[i] = byte;
             i += 1;
         }
-        if (count == max_len) {
-            break;
-        }
     }
     return out[0..i];
+}
+
+test "trim string with escape codes" {
+    var buffer = [_]u8{0} ** TRIM_BUFFER_SIZE;
+    const text = try trim("\x1B[32;43mHello, world!\x1B[0m", 5, &buffer);
+    try std.testing.expectEqualStrings("\x1B[32;43mHello\x1B[0m", text);
 }
 
 pub const Rect = struct {

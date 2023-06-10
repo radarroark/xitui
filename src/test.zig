@@ -1,5 +1,4 @@
 const std = @import("std");
-const main = @import("./main.zig");
 
 const c = @cImport({
     @cInclude("git2.h");
@@ -7,6 +6,10 @@ const c = @cImport({
 
 pub fn expectEqual(expected: anytype, actual: anytype) !void {
     try std.testing.expectEqual(@as(@TypeOf(actual), expected), actual);
+}
+
+test {
+    _ = @import("./main.zig");
 }
 
 test "end to end" {
