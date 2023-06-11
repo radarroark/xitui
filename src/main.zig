@@ -20,13 +20,13 @@ fn handleSigWinch(_: c_int) callconv(.C) void {
     term.updateSize() catch return;
 }
 
+const Size = struct { width: usize, height: usize };
+
 pub const Terminal = struct {
     tty: std.fs.File,
     cooked_termios: std.os.termios = undefined,
     raw: std.os.termios = undefined,
     size: Size = undefined,
-
-    const Size = struct { width: usize, height: usize };
 
     pub fn init() !Terminal {
         var tty = try std.fs.cwd().openFile("/dev/tty", .{ .mode = .read_write });
@@ -235,8 +235,7 @@ test "trim string with escape codes" {
 
 pub const Grid = struct {
     allocator: std.mem.Allocator,
-    width: usize,
-    height: usize,
+    size: Size,
     cells: Cells,
     buffer: []Grid.Cell,
 
@@ -245,17 +244,16 @@ pub const Grid = struct {
     };
     pub const Cells = NDSlice(Cell, 2, .row_major);
 
-    pub fn init(allocator: std.mem.Allocator, width: usize, height: usize) !Grid {
-        var buffer = try allocator.alloc(Grid.Cell, width * height);
+    pub fn init(allocator: std.mem.Allocator, size: Size) !Grid {
+        var buffer = try allocator.alloc(Grid.Cell, size.width * size.height);
         errdefer allocator.free(buffer);
         for (buffer) |*cell| {
             cell.rune = null;
         }
         return .{
             .allocator = allocator,
-            .width = width,
-            .height = height,
-            .cells = try Grid.Cells.init(.{ width, height }, buffer),
+            .size = size,
+            .cells = try Grid.Cells.init(.{ size.width, size.height }, buffer),
             .buffer = buffer,
         };
     }
@@ -268,7 +266,7 @@ pub const Grid = struct {
 test {
     const allocator = std.testing.allocator;
 
-    var grid = try Grid.init(allocator, 10, 10);
+    var grid = try Grid.init(allocator, .{ .width = 10, .height = 10 });
     defer grid.deinit();
     try expectEqual(null, grid.cells.items[try grid.cells.at(.{ 0, 0 })].rune);
 }
