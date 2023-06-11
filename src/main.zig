@@ -165,10 +165,10 @@ fn clearStyle(writer: anytype) !void {
     try writer.writeAll("\x1B[2J");
 }
 
-fn clearRect(writer: anytype, rect: Rect) !void {
-    for (0..rect.height) |i| {
-        try moveCursor(writer, rect.x, rect.y + i);
-        for (0..rect.width) |_| {
+fn clearRect(writer: anytype, x: usize, y: usize, size: Size) !void {
+    for (0..size.height) |i| {
+        try moveCursor(writer, x, y + i);
+        for (0..size.width) |_| {
             try writer.writeByte(' ');
         }
     }
@@ -181,57 +181,6 @@ pub fn expectEqual(expected: anytype, actual: anytype) !void {
 pub const TerminalError = error{
     TerminalQuit,
 };
-
-const TRIM_BUFFER_SIZE = 1024;
-
-/// copies `in` to `out` up to `max_len` unicode codepoints.
-/// escape codes are preserved and do not count towards the total.
-fn trim(in: []const u8, max_len: u64, out: *[TRIM_BUFFER_SIZE]u8) ![]u8 {
-    var utf8 = (try std.unicode.Utf8View.init(in)).iterator();
-    var count: u64 = 0;
-    const EscCodeStatus = enum { none, start, middle };
-    var esc_code_status = EscCodeStatus.none;
-    var i: u32 = 0;
-    while (utf8.nextCodepointSlice()) |codepoint| {
-        switch (esc_code_status) {
-            .none => {
-                if (std.mem.eql(u8, codepoint, "\x1B")) {
-                    esc_code_status = .start;
-                } else {
-                    if (count == max_len) {
-                        continue;
-                    } else {
-                        count += 1;
-                    }
-                }
-            },
-            .start => {
-                esc_code_status = if (std.mem.eql(u8, codepoint, "[")) .middle else .none;
-            },
-            .middle => {
-                switch (codepoint[0]) {
-                    '\x40'...'\x7E' => esc_code_status = .none,
-                    else => {},
-                }
-            },
-        }
-        if (i + codepoint.len > out.len) {
-            break;
-        } else {
-            for (codepoint) |byte| {
-                out[i] = byte;
-                i += 1;
-            }
-        }
-    }
-    return out[0..i];
-}
-
-test "trim string with escape codes" {
-    var buffer = [_]u8{0} ** TRIM_BUFFER_SIZE;
-    const text = try trim("\x1B[32;43mHello, world!\x1B[0m", 5, &buffer);
-    try std.testing.expectEqualStrings("\x1B[32;43mHello\x1B[0m", text);
-}
 
 pub const Grid = struct {
     allocator: std.mem.Allocator,
@@ -253,7 +202,7 @@ pub const Grid = struct {
         return .{
             .allocator = allocator,
             .size = size,
-            .cells = try Grid.Cells.init(.{ size.width, size.height }, buffer),
+            .cells = try Grid.Cells.init(.{ size.height, size.width }, buffer),
             .buffer = buffer,
         };
     }
@@ -265,18 +214,10 @@ pub const Grid = struct {
 
 test {
     const allocator = std.testing.allocator;
-
     var grid = try Grid.init(allocator, .{ .width = 10, .height = 10 });
     defer grid.deinit();
     try expectEqual(null, grid.cells.items[try grid.cells.at(.{ 0, 0 })].rune);
 }
-
-pub const Rect = struct {
-    x: usize,
-    y: usize,
-    width: usize,
-    height: usize,
-};
 
 var term: Terminal = undefined;
 var root: Widget = undefined;
@@ -288,6 +229,7 @@ var root: Widget = undefined;
 pub const Widget = union(enum) {
     text: Text,
     box: Box,
+    text_box: TextBox,
     git_info: GitInfo,
 
     pub fn deinit(self: *Widget) void {
@@ -296,11 +238,11 @@ pub const Widget = union(enum) {
         }
     }
 
-    pub const RenderError = Error("RenderError");
+    pub const BuildError = Error("BuildError");
 
-    pub fn render(self: *Widget, x: usize, y: usize) RenderError!void {
+    pub fn build(self: *Widget, max_size: Size) BuildError!void {
         switch (self.*) {
-            inline else => |*case| try case.render(x, y),
+            inline else => |*case| try case.build(max_size),
         }
     }
 
@@ -312,15 +254,9 @@ pub const Widget = union(enum) {
         }
     }
 
-    pub fn width(self: Widget) usize {
-        switch (self) {
-            inline else => |case| return case.rect.width,
-        }
-    }
-
-    pub fn height(self: Widget) usize {
-        switch (self) {
-            inline else => |case| return case.rect.height,
+    pub fn grid(self: *Widget) ?Grid {
+        switch (self.*) {
+            inline else => |*case| return case.grid,
         }
     }
 
@@ -339,31 +275,47 @@ pub const Widget = union(enum) {
 };
 
 pub const Text = struct {
-    rect: Rect,
+    allocator: std.mem.Allocator,
+    grid: ?Grid,
     content: []const u8,
 
-    pub fn init(x: usize, y: usize, content: []const u8) Text {
+    pub fn init(allocator: std.mem.Allocator, content: []const u8) Text {
         return .{
-            .rect = .{
-                .x = x,
-                .y = y,
-                .width = content.len,
-                .height = 1,
-            },
+            .allocator = allocator,
+            .grid = null,
             .content = content,
         };
     }
 
     pub fn deinit(self: *Text) void {
-        _ = self;
+        if (self.grid) |*grid| {
+            grid.deinit();
+        }
     }
 
-    pub const RenderError = std.fs.File.WriteError || error{InvalidUtf8};
+    pub const BuildError = error{ InvalidUtf8, TruncatedInput, Utf8CodepointTooLarge, Utf8EncodesSurrogateHalf, Utf8ExpectedContinuation, Utf8OverlongEncoding, Utf8InvalidStartByte, OutOfMemory, IndexOutOfBounds, InsufficientBufferSize, ZeroLengthDimensionsNotSupported };
 
-    pub fn render(self: *Text, x: usize, y: usize) Widget.RenderError!void {
-        var buffer = [_]u8{0} ** TRIM_BUFFER_SIZE;
-        const text = try trim(self.content, self.rect.width, &buffer);
-        try term.write(text, x + self.rect.x, y + self.rect.y);
+    pub fn build(self: *Text, max_size: Size) Widget.BuildError!void {
+        if (self.grid) |*grid| {
+            grid.deinit();
+            self.grid = null;
+        }
+        if (max_size.height == 0) {
+            return;
+        }
+        const width = try std.unicode.utf8CountCodepoints(self.content);
+        var grid = try Grid.init(self.allocator, .{ .width = std.math.min(max_size.width, width), .height = std.math.min(max_size.height, 1) });
+        errdefer grid.deinit();
+        var utf8 = (try std.unicode.Utf8View.init(self.content)).iterator();
+        var i: u32 = 0;
+        while (utf8.nextCodepointSlice()) |char| {
+            if (i == grid.size.width) {
+                break;
+            }
+            grid.cells.items[try grid.cells.at(.{ 0, i })].rune = char;
+            i += 1;
+        }
+        self.grid = grid;
     }
 
     pub const InputError = error{};
@@ -375,10 +327,10 @@ pub const Text = struct {
 };
 
 pub const Box = struct {
-    rect: Rect,
+    grid: ?Grid,
     allocator: std.mem.Allocator,
     children: std.ArrayList(Widget),
-    border_style: BorderStyle,
+    border_style: ?BorderStyle,
 
     pub const BorderStyle = enum {
         none,
@@ -386,11 +338,16 @@ pub const Box = struct {
         double,
     };
 
-    pub fn init(allocator: std.mem.Allocator, rect: Rect, border_style: BorderStyle) Box {
+    pub fn init(allocator: std.mem.Allocator, widgets: []Widget, border_style: ?BorderStyle) !Box {
+        var children = std.ArrayList(Widget).init(allocator);
+        errdefer children.deinit();
+        for (widgets) |widget| {
+            try children.append(widget);
+        }
         return .{
-            .rect = rect,
+            .grid = null,
             .allocator = allocator,
-            .children = std.ArrayList(Widget).init(allocator),
+            .children = children,
             .border_style = border_style,
         };
     }
@@ -400,69 +357,113 @@ pub const Box = struct {
             child.deinit();
         }
         self.children.deinit();
+        if (self.grid) |*grid| {
+            grid.deinit();
+        }
     }
 
-    pub const RenderError = std.fs.File.WriteError;
+    pub const BuildError = error{};
 
-    pub fn render(self: *Box, x: usize, y: usize) Widget.RenderError!void {
-        // render the children
+    pub fn build(self: *Box, max_size: Size) Widget.BuildError!void {
+        if (self.grid) |*grid| {
+            grid.deinit();
+            self.grid = null;
+        }
+        const border_size: usize = if (self.border_style) |_| 1 else 0;
+        if (max_size.width <= border_size * 2 or max_size.height <= border_size * 2) {
+            return;
+        }
         // TODO: this lays the children out vertically -- support horizontal layout as well
         var width: usize = 0;
         var height: usize = 0;
+        var remaining_width = max_size.width - (border_size * 2);
+        var remaining_height = max_size.height - (border_size * 2);
         for (self.children.items) |*child| {
-            try child.render(x + self.rect.x + 1, y + self.rect.y + 1 + height);
-            width = std.math.max(width, child.width());
-            height += child.height();
+            if (remaining_width <= 0 or remaining_height <= 0) {
+                break;
+            }
+            try child.build(.{ .width = remaining_width, .height = remaining_height });
+            if (child.grid()) |child_grid| {
+                remaining_height -= child_grid.size.height;
+                width = std.math.max(width, child_grid.size.width);
+                height += child_grid.size.height;
+            } else {
+                break;
+            }
         }
-        var horiz_buffer = try self.allocator.alloc(u8, width);
-        defer self.allocator.free(horiz_buffer);
-        for (horiz_buffer) |*b| {
-            b.* = '-';
+        width += border_size * 2;
+        height += border_size * 2;
+        if (width > max_size.width or height > max_size.height) {
+            return;
         }
-        self.rect.width = width + 2;
-        self.rect.height = height + 2;
+        var grid = try Grid.init(self.allocator, .{ .width = width, .height = height });
+        errdefer grid.deinit();
+        var line = border_size;
+        for (self.children.items) |*child| {
+            if (child.grid()) |child_grid| {
+                for (0..child_grid.size.height) |y| {
+                    for (0..child_grid.size.width) |x| {
+                        const rune = child_grid.cells.items[try child_grid.cells.at(.{ y, x })].rune;
+                        if (grid.cells.at(.{ line, x + border_size })) |index| {
+                            grid.cells.items[index].rune = rune;
+                        } else |_| {
+                            break;
+                        }
+                    }
+                    line += 1;
+                }
+            }
+        }
         // border style
-        const horiz_line = switch (self.border_style) {
-            .none => " ",
-            .single => "─",
-            .double => "═",
-        };
-        const vert_line = switch (self.border_style) {
-            .none => " ",
-            .single => "│",
-            .double => "║",
-        };
-        const top_left_corner = switch (self.border_style) {
-            .none => " ",
-            .single => "┌",
-            .double => "╔",
-        };
-        const top_right_corner = switch (self.border_style) {
-            .none => " ",
-            .single => "┐",
-            .double => "╗",
-        };
-        const bottom_left_corner = switch (self.border_style) {
-            .none => " ",
-            .single => "└",
-            .double => "╚",
-        };
-        const bottom_right_corner = switch (self.border_style) {
-            .none => " ",
-            .single => "┘",
-            .double => "╝",
-        };
-        // horiz lines
-        try term.writeHoriz(horiz_line, x + self.rect.x + 1, y + self.rect.y, width);
-        try term.writeHoriz(horiz_line, x + self.rect.x + 1, y + self.rect.y + height + 1, width);
-        // vert lines
-        try term.writeVert(vert_line, x + self.rect.x, y + self.rect.y + 1, height);
-        try term.writeVert(vert_line, x + self.rect.x + width + 1, y + self.rect.y + 1, height);
-        // corners
-        try term.write(top_left_corner, x + self.rect.x, y + self.rect.y);
-        try term.write(top_right_corner, x + self.rect.x + width + 1, y + self.rect.y);
-        try term.write(bottom_left_corner, x + self.rect.x, y + self.rect.y + height + 1);
-        try term.write(bottom_right_corner, x + self.rect.x + width + 1, y + self.rect.y + height + 1);
+        if (self.border_style) |border_style| {
+            const horiz_line = switch (border_style) {
+                .none => " ",
+                .single => "─",
+                .double => "═",
+            };
+            const vert_line = switch (border_style) {
+                .none => " ",
+                .single => "│",
+                .double => "║",
+            };
+            const top_left_corner = switch (border_style) {
+                .none => " ",
+                .single => "┌",
+                .double => "╔",
+            };
+            const top_right_corner = switch (border_style) {
+                .none => " ",
+                .single => "┐",
+                .double => "╗",
+            };
+            const bottom_left_corner = switch (border_style) {
+                .none => " ",
+                .single => "└",
+                .double => "╚",
+            };
+            const bottom_right_corner = switch (border_style) {
+                .none => " ",
+                .single => "┘",
+                .double => "╝",
+            };
+            // top and bottom border
+            for (1..grid.size.width - 1) |x| {
+                grid.cells.items[try grid.cells.at(.{ 0, x })].rune = horiz_line;
+                grid.cells.items[try grid.cells.at(.{ grid.size.height - 1, x })].rune = horiz_line;
+            }
+            // left and right border
+            for (1..grid.size.height - 1) |y| {
+                grid.cells.items[try grid.cells.at(.{ y, 0 })].rune = vert_line;
+                grid.cells.items[try grid.cells.at(.{ y, grid.size.width - 1 })].rune = vert_line;
+            }
+            // corners
+            grid.cells.items[try grid.cells.at(.{ 0, 0 })].rune = top_left_corner;
+            grid.cells.items[try grid.cells.at(.{ 0, grid.size.width - 1 })].rune = top_right_corner;
+            grid.cells.items[try grid.cells.at(.{ grid.size.height - 1, 0 })].rune = bottom_left_corner;
+            grid.cells.items[try grid.cells.at(.{ grid.size.height - 1, grid.size.width - 1 })].rune = bottom_right_corner;
+        }
+        // set grid
+        self.grid = grid;
     }
 
     pub const InputError = error{};
@@ -474,14 +475,56 @@ pub const Box = struct {
     }
 };
 
+pub const TextBox = struct {
+    allocator: std.mem.Allocator,
+    grid: ?Grid,
+    text: Text,
+    box: Box,
+    border_style: ?Box.BorderStyle,
+
+    pub fn init(allocator: std.mem.Allocator, content: []const u8, border_style: ?Box.BorderStyle) !TextBox {
+        var text = Text.init(allocator, content);
+        errdefer text.deinit();
+        var widgets = [_]Widget{Widget{ .text = text }};
+        var box = try Box.init(allocator, &widgets, border_style);
+        errdefer box.deinit();
+        return .{
+            .allocator = allocator,
+            .grid = null,
+            .text = text,
+            .box = box,
+            .border_style = border_style,
+        };
+    }
+
+    pub fn deinit(self: *TextBox) void {
+        self.box.deinit();
+    }
+
+    pub const BuildError = error{};
+
+    pub fn build(self: *TextBox, max_size: Size) Widget.BuildError!void {
+        self.grid = null;
+        try self.box.build(max_size);
+        self.grid = self.box.grid;
+    }
+
+    pub const InputError = error{};
+
+    pub fn input(self: *TextBox, byte: u8) Widget.InputError!void {
+        try self.box.input(byte);
+    }
+};
+
 pub const GitInfo = struct {
-    rect: Rect,
+    grid: ?Grid,
+    box: ?Box,
     allocator: std.mem.Allocator,
     repo: ?*c.git_repository,
     lines: std.ArrayList([]const u8),
     index: u32 = 0,
 
-    pub fn init(allocator: std.mem.Allocator, rect: Rect, repo: ?*c.git_repository, index: u32) !GitInfo {
+    pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository, index: u32) !GitInfo {
         // init walker
         var walker: ?*c.git_revwalk = null;
         try expectEqual(0, c.git_revwalk_new(&walker, repo));
@@ -506,7 +549,8 @@ pub const GitInfo = struct {
         }
 
         return .{
-            .rect = rect,
+            .grid = null,
+            .box = null,
             .allocator = allocator,
             .repo = repo,
             .lines = lines,
@@ -521,22 +565,23 @@ pub const GitInfo = struct {
         self.lines.deinit();
     }
 
-    pub const RenderError = std.mem.Allocator.Error || Text.RenderError;
+    pub const BuildError = std.mem.Allocator.Error || Text.BuildError;
 
-    pub fn render(self: *GitInfo, x: usize, y: usize) RenderError!void {
-        var total_height: usize = 0;
+    pub fn build(self: *GitInfo, max_size: Size) BuildError!void {
+        self.box = null;
+        self.grid = null;
+        var widgets = std.ArrayList(Widget).init(self.allocator);
+        defer widgets.deinit();
         for (self.lines.items, 0..) |line, i| {
-            var box_widget = Widget{ .box = Box.init(self.allocator, .{ .x = 0, .y = 0, .width = 0, .height = 0 }, if (self.index == i) .double else .single) };
-            defer box_widget.deinit();
-            var text_widget = Widget{ .text = Text.init(0, 0, line) };
-            text_widget.text.rect.width = std.math.min(
-                text_widget.text.rect.width,
-                self.rect.width - 2,
-            );
-            try box_widget.box.children.append(text_widget);
-            try box_widget.render(x + self.rect.x, y + self.rect.y + total_height);
-            total_height += box_widget.height();
+            var text_box = try TextBox.init(self.allocator, line, if (self.index == i) .double else .single);
+            errdefer text_box.deinit();
+            try widgets.append(Widget{ .text_box = text_box });
         }
+        var box = try Box.init(self.allocator, widgets.items, null);
+        errdefer box.deinit();
+        try box.build(max_size);
+        self.box = box;
+        self.grid = box.grid;
     }
 
     pub const InputError = std.os.TermiosSetError || std.fs.File.ReadError;
@@ -559,13 +604,30 @@ pub const GitInfo = struct {
 };
 
 fn tick() !void {
-    const root_rect = .{ .x = 0, .y = 0, .width = term.size.width, .height = term.size.height };
-    if (root.width() != root_rect.width or root.height() != root_rect.height) {
-        root.git_info.rect = root_rect;
-        try clearRect(term.tty.writer(), root_rect);
+    const root_size: Size = .{ .width = term.size.width, .height = term.size.height };
+    if (root_size.width == 0 or root_size.height == 0) {
+        return;
+    }
+    const refresh = if (root.grid()) |grid|
+        grid.size.width != root_size.width or grid.size.height != root_size.height
+    else
+        true;
+    if (refresh) {
+        try root.build(root_size);
     }
 
-    try root.render(0, 0);
+    // TODO: this is very inefficient...clear the screen more surgically
+    try clearRect(term.tty.writer(), 0, 0, root_size);
+
+    if (root.grid()) |grid| {
+        for (0..grid.size.height) |y| {
+            for (0..grid.size.width) |x| {
+                if (grid.cells.items[try grid.cells.at(.{ y, x })].rune) |rune| {
+                    try term.write(rune, x, y);
+                }
+            }
+        }
+    }
 
     var buffer: [1]u8 = undefined;
     const size = try term.tty.read(&buffer);
@@ -593,14 +655,14 @@ pub fn main() !void {
     try expectEqual(0, c.git_repository_init(&repo, cwd_path, 0));
     defer c.git_repository_free(repo);
 
+    // init root widget
+    const allocator = std.heap.page_allocator;
+    root = Widget{ .git_info = try GitInfo.init(allocator, repo, 0) };
+    defer root.deinit();
+
     // init term
     term = try Terminal.init();
     defer term.deinit();
-
-    // init root widget
-    const allocator = std.heap.page_allocator;
-    root = Widget{ .git_info = try GitInfo.init(allocator, .{ .x = 0, .y = 0, .width = term.size.width, .height = term.size.height }, repo, 0) };
-    defer root.deinit();
 
     // non-blocking
     term.raw.cc[system.V.TIME] = 1;
