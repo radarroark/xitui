@@ -14,6 +14,7 @@ const system = switch (builtin.os.tag) {
 const c = @cImport({
     @cInclude("git2.h");
 });
+const NDSlice = @import("./ndslice.zig").NDSlice;
 
 fn handleSigWinch(_: c_int) callconv(.C) void {
     term.updateSize() catch return;
@@ -230,6 +231,46 @@ test "trim string with escape codes" {
     var buffer = [_]u8{0} ** TRIM_BUFFER_SIZE;
     const text = try trim("\x1B[32;43mHello, world!\x1B[0m", 5, &buffer);
     try std.testing.expectEqualStrings("\x1B[32;43mHello\x1B[0m", text);
+}
+
+pub const Grid = struct {
+    allocator: std.mem.Allocator,
+    width: usize,
+    height: usize,
+    cells: Cells,
+    buffer: []Grid.Cell,
+
+    pub const Cell = struct {
+        rune: ?[]const u8,
+    };
+    pub const Cells = NDSlice(Cell, 2, .row_major);
+
+    pub fn init(allocator: std.mem.Allocator, width: usize, height: usize) !Grid {
+        var buffer = try allocator.alloc(Grid.Cell, width * height);
+        errdefer allocator.free(buffer);
+        for (buffer) |*cell| {
+            cell.rune = null;
+        }
+        return .{
+            .allocator = allocator,
+            .width = width,
+            .height = height,
+            .cells = try Grid.Cells.init(.{ width, height }, buffer),
+            .buffer = buffer,
+        };
+    }
+
+    pub fn deinit(self: *Grid) void {
+        self.allocator.free(self.buffer);
+    }
+};
+
+test {
+    const allocator = std.testing.allocator;
+
+    var grid = try Grid.init(allocator, 10, 10);
+    defer grid.deinit();
+    try expectEqual(null, grid.cells.items[try grid.cells.at(.{ 0, 0 })].rune);
 }
 
 pub const Rect = struct {

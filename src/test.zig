@@ -10,6 +10,7 @@ pub fn expectEqual(expected: anytype, actual: anytype) !void {
 
 test {
     _ = @import("./main.zig");
+    _ = @import("./ndslice.zig");
 }
 
 test "end to end" {
