@@ -519,9 +519,9 @@ pub const TextBox = struct {
     border_style: ?Box.BorderStyle,
     lines: std.ArrayList(std.ArrayList(u8)),
 
-    pub const InitError = error{ EndOfStream, StreamTooLong };
+    pub const InitError = error{ EndOfStream, StreamTooLong, OutOfMemory };
 
-    pub fn init(allocator: std.mem.Allocator, content: []const u8, border_style: ?Box.BorderStyle) !TextBox {
+    pub fn init(allocator: std.mem.Allocator, content: []const u8, border_style: ?Box.BorderStyle) InitError!TextBox {
         var lines = std.ArrayList(std.ArrayList(u8)).init(allocator);
         errdefer {
             for (lines.items) |*line| {
