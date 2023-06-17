@@ -331,14 +331,20 @@ pub const Box = struct {
     allocator: std.mem.Allocator,
     children: std.ArrayList(Widget),
     border_style: ?BorderStyle,
+    direction: Direction,
 
     pub const BorderStyle = enum {
-        none,
+        hidden,
         single,
         double,
     };
 
-    pub fn init(allocator: std.mem.Allocator, widgets: []Widget, border_style: ?BorderStyle) !Box {
+    pub const Direction = enum {
+        vert,
+        horiz,
+    };
+
+    pub fn init(allocator: std.mem.Allocator, widgets: []Widget, border_style: ?BorderStyle, direction: Direction) !Box {
         var children = std.ArrayList(Widget).init(allocator);
         errdefer children.deinit();
         for (widgets) |widget| {
@@ -349,6 +355,7 @@ pub const Box = struct {
             .allocator = allocator,
             .children = children,
             .border_style = border_style,
+            .direction = direction,
         };
     }
 
@@ -373,7 +380,6 @@ pub const Box = struct {
         if (max_size.width <= border_size * 2 or max_size.height <= border_size * 2) {
             return;
         }
-        // TODO: this lays the children out vertically -- support horizontal layout as well
         var width: usize = 0;
         var height: usize = 0;
         var remaining_width = max_size.width - (border_size * 2);
@@ -384,9 +390,18 @@ pub const Box = struct {
             }
             try child.build(.{ .width = remaining_width, .height = remaining_height });
             if (child.grid()) |child_grid| {
-                remaining_height -= child_grid.size.height;
-                width = std.math.max(width, child_grid.size.width);
-                height += child_grid.size.height;
+                switch (self.direction) {
+                    .vert => {
+                        remaining_height -= child_grid.size.height;
+                        width = std.math.max(width, child_grid.size.width);
+                        height += child_grid.size.height;
+                    },
+                    .horiz => {
+                        remaining_width -= child_grid.size.width;
+                        width += child_grid.size.width;
+                        height = std.math.max(height, child_grid.size.height);
+                    },
+                }
             } else {
                 break;
             }
@@ -398,51 +413,73 @@ pub const Box = struct {
         }
         var grid = try Grid.init(self.allocator, .{ .width = width, .height = height });
         errdefer grid.deinit();
-        var line = border_size;
-        for (self.children.items) |*child| {
-            if (child.grid()) |child_grid| {
-                for (0..child_grid.size.height) |y| {
-                    for (0..child_grid.size.width) |x| {
-                        const rune = child_grid.cells.items[try child_grid.cells.at(.{ y, x })].rune;
-                        if (grid.cells.at(.{ line, x + border_size })) |index| {
-                            grid.cells.items[index].rune = rune;
-                        } else |_| {
-                            break;
+        switch (self.direction) {
+            .vert => {
+                var line: usize = 0;
+                for (self.children.items) |*child| {
+                    if (child.grid()) |child_grid| {
+                        for (0..child_grid.size.height) |y| {
+                            for (0..child_grid.size.width) |x| {
+                                const rune = child_grid.cells.items[try child_grid.cells.at(.{ y, x })].rune;
+                                if (grid.cells.at(.{ line + border_size, x + border_size })) |index| {
+                                    grid.cells.items[index].rune = rune;
+                                } else |_| {
+                                    break;
+                                }
+                            }
+                            line += 1;
                         }
                     }
-                    line += 1;
                 }
-            }
+            },
+            .horiz => {
+                var col: usize = 0;
+                for (self.children.items) |*child| {
+                    if (child.grid()) |child_grid| {
+                        for (0..child_grid.size.width) |x| {
+                            for (0..child_grid.size.height) |y| {
+                                const rune = child_grid.cells.items[try child_grid.cells.at(.{ y, x })].rune;
+                                if (grid.cells.at(.{ y + border_size, col + border_size })) |index| {
+                                    grid.cells.items[index].rune = rune;
+                                } else |_| {
+                                    break;
+                                }
+                            }
+                            col += 1;
+                        }
+                    }
+                }
+            },
         }
         // border style
         if (self.border_style) |border_style| {
             const horiz_line = switch (border_style) {
-                .none => " ",
+                .hidden => " ",
                 .single => "─",
                 .double => "═",
             };
             const vert_line = switch (border_style) {
-                .none => " ",
+                .hidden => " ",
                 .single => "│",
                 .double => "║",
             };
             const top_left_corner = switch (border_style) {
-                .none => " ",
+                .hidden => " ",
                 .single => "┌",
                 .double => "╔",
             };
             const top_right_corner = switch (border_style) {
-                .none => " ",
+                .hidden => " ",
                 .single => "┐",
                 .double => "╗",
             };
             const bottom_left_corner = switch (border_style) {
-                .none => " ",
+                .hidden => " ",
                 .single => "└",
                 .double => "╚",
             };
             const bottom_right_corner = switch (border_style) {
-                .none => " ",
+                .hidden => " ",
                 .single => "┘",
                 .double => "╝",
             };
@@ -486,7 +523,7 @@ pub const TextBox = struct {
         var text = Text.init(allocator, content);
         errdefer text.deinit();
         var widgets = [_]Widget{Widget{ .text = text }};
-        var box = try Box.init(allocator, &widgets, border_style);
+        var box = try Box.init(allocator, &widgets, border_style, .vert);
         errdefer box.deinit();
         return .{
             .allocator = allocator,
@@ -577,7 +614,7 @@ pub const GitInfo = struct {
             errdefer text_box.deinit();
             try widgets.append(Widget{ .text_box = text_box });
         }
-        var box = try Box.init(self.allocator, widgets.items, null);
+        var box = try Box.init(self.allocator, widgets.items, null, .vert);
         errdefer box.deinit();
         try box.build(max_size);
         self.box = box;
