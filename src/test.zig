@@ -106,11 +106,18 @@ test "end to end" {
         defer license.close();
         try license.writeAll("do whatever you want");
 
+        // change file
+        const hello_txt = try repo_dir.openFile("hello.txt", .{ .mode = .read_write });
+        defer hello_txt.close();
+        try hello_txt.writeAll("goodbye, world!");
+        try hello_txt.setEndPos(try hello_txt.getPos());
+
         // add the files
         var index: ?*c.git_index = null;
         try expectEqual(0, c.git_repository_index(&index, repo));
         defer c.git_index_free(index);
         try expectEqual(0, c.git_index_add_bypath(index, "LICENSE"));
+        try expectEqual(0, c.git_index_add_bypath(index, "hello.txt"));
         try expectEqual(0, c.git_index_write(index));
 
         // get previous commit
@@ -171,12 +178,49 @@ test "end to end" {
         while (0 == c.git_revwalk_next(&oid, walker)) {
             var commit: ?*c.git_commit = null;
             try expectEqual(0, c.git_commit_lookup(&commit, repo, &oid));
-            try commits.append(commit);
+            {
+                errdefer c.git_commit_free(commit);
+                try commits.append(commit);
+            }
         }
 
         // check the commit messages
         try expectEqual(2, commits.items.len);
         try std.testing.expectEqualStrings("add license", std.mem.sliceTo(c.git_commit_message(commits.items[0]), 0));
         try std.testing.expectEqualStrings("let there be light", std.mem.sliceTo(c.git_commit_message(commits.items[1]), 0));
+
+        // diff the commits
+        for (0..commits.items.len) |i| {
+            const commit = commits.items[i];
+
+            const commit_oid = c.git_commit_tree_id(commit);
+            var commit_tree: ?*c.git_tree = null;
+            try expectEqual(0, c.git_tree_lookup(&commit_tree, repo, commit_oid));
+            defer c.git_tree_free(commit_tree);
+
+            var prev_commit_tree: ?*c.git_tree = null;
+
+            if (i < commits.items.len - 1) {
+                const prev_commit = commits.items[i + 1];
+                const prev_commit_oid = c.git_commit_tree_id(prev_commit);
+                try expectEqual(0, c.git_tree_lookup(&prev_commit_tree, repo, prev_commit_oid));
+            }
+            defer if (prev_commit_tree) |ptr| c.git_tree_free(ptr);
+
+            var commit_diff: ?*c.git_diff = null;
+            try expectEqual(0, c.git_diff_tree_to_tree(&commit_diff, repo, prev_commit_tree, commit_tree, null));
+            defer c.git_diff_free(commit_diff);
+
+            const delta_count = c.git_diff_num_deltas(commit_diff);
+            for (0..delta_count) |delta_index| {
+                var commit_patch: ?*c.git_patch = null;
+                try expectEqual(0, c.git_patch_from_diff(&commit_patch, commit_diff, delta_index));
+                defer c.git_patch_free(commit_patch);
+
+                var commit_buf: c.git_buf = std.mem.zeroes(c.git_buf);
+                try expectEqual(0, c.git_patch_to_buf(&commit_buf, commit_patch));
+                defer c.git_buf_dispose(&commit_buf);
+            }
+        }
     }
 }
