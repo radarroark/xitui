@@ -304,7 +304,7 @@ pub const Text = struct {
             return;
         }
         const width = try std.unicode.utf8CountCodepoints(self.content);
-        var grid = try Grid.init(self.allocator, .{ .width = std.math.min(max_size.width, width), .height = std.math.min(max_size.height, 1) });
+        var grid = try Grid.init(self.allocator, .{ .width = @max(1, @min(max_size.width, width)), .height = @max(1, @min(max_size.height, 1)) });
         errdefer grid.deinit();
         var utf8 = (try std.unicode.Utf8View.init(self.content)).iterator();
         var i: u32 = 0;
@@ -393,13 +393,13 @@ pub const Box = struct {
                 switch (self.direction) {
                     .vert => {
                         remaining_height -= child_grid.size.height;
-                        width = std.math.max(width, child_grid.size.width);
+                        width = @max(width, child_grid.size.width);
                         height += child_grid.size.height;
                     },
                     .horiz => {
                         remaining_width -= child_grid.size.width;
                         width += child_grid.size.width;
-                        height = std.math.max(height, child_grid.size.height);
+                        height = @max(height, child_grid.size.height);
                     },
                 }
             } else {
@@ -515,27 +515,63 @@ pub const Box = struct {
 pub const TextBox = struct {
     allocator: std.mem.Allocator,
     grid: ?Grid,
-    text: Text,
     box: Box,
     border_style: ?Box.BorderStyle,
+    lines: std.ArrayList(std.ArrayList(u8)),
+
+    pub const InitError = error{ EndOfStream, StreamTooLong };
 
     pub fn init(allocator: std.mem.Allocator, content: []const u8, border_style: ?Box.BorderStyle) !TextBox {
-        var text = Text.init(allocator, content);
-        errdefer text.deinit();
-        var widgets = [_]Widget{Widget{ .text = text }};
-        var box = try Box.init(allocator, &widgets, border_style, .vert);
+        var lines = std.ArrayList(std.ArrayList(u8)).init(allocator);
+        errdefer {
+            for (lines.items) |*line| {
+                line.deinit();
+            }
+            lines.deinit();
+        }
+        var fbs = std.io.fixedBufferStream(content);
+        var reader = fbs.reader();
+        while (true) {
+            var line = std.ArrayList(u8).init(allocator);
+            errdefer line.deinit();
+            if (reader.streamUntilDelimiter(line.writer(), '\n', null)) {
+                try lines.append(line);
+            } else |err| {
+                if (err == error.EndOfStream) {
+                    try lines.append(line);
+                    break;
+                } else {
+                    return err;
+                }
+            }
+        }
+
+        var widgets = std.ArrayList(Widget).init(allocator);
+        defer widgets.deinit();
+        for (lines.items) |line| {
+            var text = Text.init(allocator, line.items);
+            errdefer text.deinit();
+            try widgets.append(Widget{ .text = text });
+        }
+
+        var box = try Box.init(allocator, widgets.items, border_style, .vert);
         errdefer box.deinit();
+
         return .{
             .allocator = allocator,
             .grid = null,
-            .text = text,
             .box = box,
             .border_style = border_style,
+            .lines = lines,
         };
     }
 
     pub fn deinit(self: *TextBox) void {
         self.box.deinit();
+        for (self.lines.items) |*line| {
+            line.deinit();
+        }
+        self.lines.deinit();
     }
 
     pub const BuildError = error{};
@@ -558,8 +594,9 @@ pub const GitInfo = struct {
     box: ?Box,
     allocator: std.mem.Allocator,
     repo: ?*c.git_repository,
-    lines: std.ArrayList([]const u8),
+    commits: std.ArrayList(?*c.git_commit),
     index: u32 = 0,
+    bufs: std.ArrayList(c.git_buf),
 
     pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository, index: u32) !GitInfo {
         // init walker
@@ -569,59 +606,79 @@ pub const GitInfo = struct {
         try expectEqual(0, c.git_revwalk_sorting(walker, c.GIT_SORT_TIME));
         try expectEqual(0, c.git_revwalk_push_head(walker));
 
-        // init lines
-        var lines = std.ArrayList([]const u8).init(allocator);
-        errdefer lines.deinit();
+        // init commits
+        var commits = std.ArrayList(?*c.git_commit).init(allocator);
+        errdefer commits.deinit();
 
         // walk the commits
         var oid: c.git_oid = undefined;
         while (0 == c.git_revwalk_next(&oid, walker)) {
             var commit: ?*c.git_commit = null;
             try expectEqual(0, c.git_commit_lookup(&commit, repo, &oid));
-            defer c.git_commit_free(commit);
-            // make copy of message so it can live beyond lifetime of commit
-            const message = try std.fmt.allocPrint(allocator, "{s}", .{std.mem.sliceTo(c.git_commit_message(commit), '\n')});
-            errdefer allocator.free(message);
-            try lines.append(message);
+            errdefer c.git_commit_free(commit);
+            try commits.append(commit);
         }
 
-        return .{
+        var git_info = GitInfo{
             .grid = null,
             .box = null,
             .allocator = allocator,
             .repo = repo,
-            .lines = lines,
+            .commits = commits,
             .index = index,
+            .bufs = std.ArrayList(c.git_buf).init(allocator),
         };
+        try git_info.updateDiff();
+
+        return git_info;
     }
 
     pub fn deinit(self: *GitInfo) void {
-        for (self.lines.items) |line| {
-            self.allocator.free(line);
+        for (self.commits.items) |commit| {
+            c.git_commit_free(commit);
         }
-        self.lines.deinit();
+        self.commits.deinit();
+        for (self.bufs.items) |*buf| {
+            c.git_buf_dispose(buf);
+        }
+        self.bufs.deinit();
     }
 
-    pub const BuildError = std.mem.Allocator.Error || Text.BuildError;
+    pub const BuildError = std.mem.Allocator.Error || Text.BuildError || TextBox.InitError;
 
     pub fn build(self: *GitInfo, max_size: Size) BuildError!void {
         self.box = null;
         self.grid = null;
-        var widgets = std.ArrayList(Widget).init(self.allocator);
-        defer widgets.deinit();
-        for (self.lines.items, 0..) |line, i| {
+
+        var commits = std.ArrayList(Widget).init(self.allocator);
+        defer commits.deinit();
+        for (self.commits.items, 0..) |commit, i| {
+            const line = std.mem.sliceTo(c.git_commit_message(commit), '\n');
             var text_box = try TextBox.init(self.allocator, line, if (self.index == i) .double else .single);
             errdefer text_box.deinit();
-            try widgets.append(Widget{ .text_box = text_box });
+            try commits.append(Widget{ .text_box = text_box });
         }
-        var box = try Box.init(self.allocator, widgets.items, null, .vert);
+        var left_box = try Box.init(self.allocator, commits.items, null, .vert);
+
+        var diffs = std.ArrayList(Widget).init(self.allocator);
+        defer diffs.deinit();
+        for (self.bufs.items) |buf| {
+            var text_box = try TextBox.init(self.allocator, std.mem.sliceTo(buf.ptr, 0), .hidden);
+            errdefer text_box.deinit();
+            try diffs.append(Widget{ .text_box = text_box });
+        }
+        var right_box = try Box.init(self.allocator, diffs.items, null, .vert);
+
+        var box_contents = [_]Widget{ Widget{ .box = left_box }, Widget{ .box = right_box } };
+        var box = try Box.init(self.allocator, &box_contents, null, .horiz);
         errdefer box.deinit();
+
         try box.build(max_size);
         self.box = box;
         self.grid = box.grid;
     }
 
-    pub const InputError = std.os.TermiosSetError || std.fs.File.ReadError;
+    pub const InputError = std.os.TermiosSetError || std.fs.File.ReadError || error{ TestExpectedEqual, OutOfMemory };
 
     pub fn input(self: *GitInfo, byte: u8) Widget.InputError!void {
         if (byte == '\x1B') {
@@ -632,9 +689,52 @@ pub const GitInfo = struct {
             if (std.mem.eql(u8, esc_slice, "[A")) {
                 self.index -|= 1;
             } else if (std.mem.eql(u8, esc_slice, "[B")) {
-                if (self.index + 1 < self.lines.items.len) {
+                if (self.index + 1 < self.commits.items.len) {
                     self.index += 1;
                 }
+            }
+
+            try self.updateDiff();
+        }
+    }
+
+    fn updateDiff(self: *GitInfo) !void {
+        for (self.bufs.items) |*buf| {
+            c.git_buf_dispose(buf);
+        }
+        self.bufs.clearAndFree();
+
+        const commit = self.commits.items[self.index];
+
+        const commit_oid = c.git_commit_tree_id(commit);
+        var commit_tree: ?*c.git_tree = null;
+        try expectEqual(0, c.git_tree_lookup(&commit_tree, self.repo, commit_oid));
+        defer c.git_tree_free(commit_tree);
+
+        var prev_commit_tree: ?*c.git_tree = null;
+
+        if (self.index < self.commits.items.len - 1) {
+            const prev_commit = self.commits.items[self.index + 1];
+            const prev_commit_oid = c.git_commit_tree_id(prev_commit);
+            try expectEqual(0, c.git_tree_lookup(&prev_commit_tree, self.repo, prev_commit_oid));
+        }
+        defer if (prev_commit_tree) |ptr| c.git_tree_free(ptr);
+
+        var commit_diff: ?*c.git_diff = null;
+        try expectEqual(0, c.git_diff_tree_to_tree(&commit_diff, self.repo, prev_commit_tree, commit_tree, null));
+        defer c.git_diff_free(commit_diff);
+
+        const delta_count = c.git_diff_num_deltas(commit_diff);
+        for (0..delta_count) |delta_index| {
+            var commit_patch: ?*c.git_patch = null;
+            try expectEqual(0, c.git_patch_from_diff(&commit_patch, commit_diff, delta_index));
+            defer c.git_patch_free(commit_patch);
+
+            var commit_buf: c.git_buf = std.mem.zeroes(c.git_buf);
+            try expectEqual(0, c.git_patch_to_buf(&commit_buf, commit_patch));
+            {
+                errdefer c.git_buf_dispose(&commit_buf);
+                try self.bufs.append(commit_buf);
             }
         }
     }
@@ -674,6 +774,7 @@ fn tick() !void {
             return error.TerminalQuit;
         } else {
             try root.input(buffer[0]);
+            try root.build(root_size);
         }
     }
 }
