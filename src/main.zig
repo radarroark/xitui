@@ -751,10 +751,8 @@ fn tick() !void {
         true;
     if (refresh) {
         try root.build(root_size);
+        try clearRect(term.tty.writer(), 0, 0, root_size); // TODO: clear the screen more efficiently
     }
-
-    // TODO: this is very inefficient...clear the screen more surgically
-    try clearRect(term.tty.writer(), 0, 0, root_size);
 
     if (root.grid()) |grid| {
         for (0..grid.size.height) |y| {
@@ -775,6 +773,7 @@ fn tick() !void {
         } else {
             try root.input(buffer[0]);
             try root.build(root_size);
+            try clearRect(term.tty.writer(), 0, 0, root_size); // TODO: clear the screen more efficiently
         }
     }
 }
