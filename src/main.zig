@@ -295,7 +295,7 @@ pub const Text = struct {
 
     pub const BuildError = error{ InvalidUtf8, TruncatedInput, Utf8CodepointTooLarge, Utf8EncodesSurrogateHalf, Utf8ExpectedContinuation, Utf8OverlongEncoding, Utf8InvalidStartByte, OutOfMemory, IndexOutOfBounds, InsufficientBufferSize, ZeroLengthDimensionsNotSupported };
 
-    pub fn build(self: *Text, max_size: Size) Widget.BuildError!void {
+    pub fn build(self: *Text, max_size: Size) BuildError!void {
         if (self.grid) |*grid| {
             grid.deinit();
             self.grid = null;
@@ -320,7 +320,7 @@ pub const Text = struct {
 
     pub const InputError = error{};
 
-    pub fn input(self: *Text, byte: u8) !void {
+    pub fn input(self: *Text, byte: u8) InputError!void {
         _ = self;
         _ = byte;
     }
@@ -344,7 +344,9 @@ pub const Box = struct {
         horiz,
     };
 
-    pub fn init(allocator: std.mem.Allocator, widgets: []Widget, border_style: ?BorderStyle, direction: Direction) !Box {
+    pub const InitError = error{OutOfMemory};
+
+    pub fn init(allocator: std.mem.Allocator, widgets: []Widget, border_style: ?BorderStyle, direction: Direction) InitError!Box {
         var children = std.ArrayList(Widget).init(allocator);
         errdefer children.deinit();
         for (widgets) |widget| {
@@ -519,7 +521,7 @@ pub const TextBox = struct {
     border_style: ?Box.BorderStyle,
     lines: std.ArrayList(std.ArrayList(u8)),
 
-    pub const InitError = error{ EndOfStream, StreamTooLong, OutOfMemory };
+    pub const InitError = error{ EndOfStream, StreamTooLong, OutOfMemory } || Box.InitError;
 
     pub fn init(allocator: std.mem.Allocator, content: []const u8, border_style: ?Box.BorderStyle) InitError!TextBox {
         var lines = std.ArrayList(std.ArrayList(u8)).init(allocator);
@@ -598,7 +600,9 @@ pub const GitInfo = struct {
     index: u32 = 0,
     bufs: std.ArrayList(c.git_buf),
 
-    pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository, index: u32) !GitInfo {
+    pub const InitError = error{ TestExpectedEqual, OutOfMemory };
+
+    pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository, index: u32) InitError!GitInfo {
         // init walker
         var walker: ?*c.git_revwalk = null;
         try expectEqual(0, c.git_revwalk_new(&walker, repo));
@@ -680,7 +684,7 @@ pub const GitInfo = struct {
 
     pub const InputError = std.os.TermiosSetError || std.fs.File.ReadError || error{ TestExpectedEqual, OutOfMemory };
 
-    pub fn input(self: *GitInfo, byte: u8) Widget.InputError!void {
+    pub fn input(self: *GitInfo, byte: u8) InputError!void {
         if (byte == '\x1B') {
             var esc_buffer: [8]u8 = undefined;
             const esc_read = try term.tty.read(&esc_buffer);
