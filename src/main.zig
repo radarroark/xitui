@@ -21,6 +21,7 @@ fn handleSigWinch(_: c_int) callconv(.C) void {
 }
 
 const Size = struct { width: usize, height: usize };
+const MaxSize = struct { width: ?usize, height: ?usize };
 
 pub const Terminal = struct {
     tty: std.fs.File,
@@ -193,7 +194,9 @@ pub const Grid = struct {
     };
     pub const Cells = NDSlice(Cell, 2, .row_major);
 
-    pub fn init(allocator: std.mem.Allocator, size: Size) !Grid {
+    pub const InitError = error{ OutOfMemory, IndexOutOfBounds, InsufficientBufferSize, ZeroLengthDimensionsNotSupported };
+
+    pub fn init(allocator: std.mem.Allocator, size: Size) InitError!Grid {
         var buffer = try allocator.alloc(Grid.Cell, size.width * size.height);
         errdefer allocator.free(buffer);
         for (buffer) |*cell| {
@@ -203,6 +206,42 @@ pub const Grid = struct {
             .allocator = allocator,
             .size = size,
             .cells = try Grid.Cells.init(.{ size.height, size.width }, buffer),
+            .buffer = buffer,
+        };
+    }
+
+    pub const InitFromGridError = error{ OutOfMemory, IndexOutOfBounds, InsufficientBufferSize, ZeroLengthDimensionsNotSupported };
+
+    pub fn initFromGrid(allocator: std.mem.Allocator, grid: Grid, size: Size, grid_x: usize, grid_y: usize) InitFromGridError!Grid {
+        // TODO: for now this is just copying from the source grid.
+        // we really should just be getting a view into it, but i'm too lazy right now.
+        var buffer = try allocator.alloc(Grid.Cell, size.width * size.height);
+        errdefer allocator.free(buffer);
+        for (buffer) |*cell| {
+            cell.rune = null;
+        }
+        var cells = try Grid.Cells.init(.{ size.height, size.width }, buffer);
+        var dest_y: usize = 0;
+        for (grid_y..grid_y + size.height) |source_y| {
+            var dest_x: usize = 0;
+            for (grid_x..grid_x + size.width) |source_x| {
+                if (cells.at(.{ dest_y, dest_x })) |dest_index| {
+                    if (grid.cells.at(.{ source_y, source_x })) |source_index| {
+                        cells.items[dest_index].rune = grid.cells.items[source_index].rune;
+                    } else |_| {
+                        break;
+                    }
+                } else |_| {
+                    break;
+                }
+                dest_x += 1;
+            }
+            dest_y += 1;
+        }
+        return .{
+            .allocator = allocator,
+            .size = size,
+            .cells = cells,
             .buffer = buffer,
         };
     }
@@ -230,6 +269,7 @@ pub const Widget = union(enum) {
     text: Text,
     box: Box,
     text_box: TextBox,
+    scroll: Scroll,
     git_info: GitInfo,
 
     pub fn deinit(self: *Widget) void {
@@ -240,7 +280,7 @@ pub const Widget = union(enum) {
 
     pub const BuildError = Error("BuildError");
 
-    pub fn build(self: *Widget, max_size: Size) BuildError!void {
+    pub fn build(self: *Widget, max_size: MaxSize) BuildError!void {
         switch (self.*) {
             inline else => |*case| try case.build(max_size),
         }
@@ -293,18 +333,15 @@ pub const Text = struct {
         }
     }
 
-    pub const BuildError = error{ InvalidUtf8, TruncatedInput, Utf8CodepointTooLarge, Utf8EncodesSurrogateHalf, Utf8ExpectedContinuation, Utf8OverlongEncoding, Utf8InvalidStartByte, OutOfMemory, IndexOutOfBounds, InsufficientBufferSize, ZeroLengthDimensionsNotSupported };
+    pub const BuildError = error{ InvalidUtf8, TruncatedInput, Utf8CodepointTooLarge, Utf8EncodesSurrogateHalf, Utf8ExpectedContinuation, Utf8OverlongEncoding, Utf8InvalidStartByte } || Grid.InitError;
 
-    pub fn build(self: *Text, max_size: Size) BuildError!void {
+    pub fn build(self: *Text, max_size: MaxSize) BuildError!void {
         if (self.grid) |*grid| {
             grid.deinit();
             self.grid = null;
         }
-        if (max_size.height == 0) {
-            return;
-        }
         const width = try std.unicode.utf8CountCodepoints(self.content);
-        var grid = try Grid.init(self.allocator, .{ .width = @max(1, @min(max_size.width, width)), .height = @max(1, @min(max_size.height, 1)) });
+        var grid = try Grid.init(self.allocator, .{ .width = @max(1, @min(max_size.width orelse width, width)), .height = @max(1, @min(max_size.height orelse 1, 1)) });
         errdefer grid.deinit();
         var utf8 = (try std.unicode.Utf8View.init(self.content)).iterator();
         var i: u32 = 0;
@@ -373,33 +410,39 @@ pub const Box = struct {
 
     pub const BuildError = error{};
 
-    pub fn build(self: *Box, max_size: Size) Widget.BuildError!void {
+    pub fn build(self: *Box, max_size: MaxSize) Widget.BuildError!void {
         if (self.grid) |*grid| {
             grid.deinit();
             self.grid = null;
         }
         const border_size: usize = if (self.border_style) |_| 1 else 0;
-        if (max_size.width <= border_size * 2 or max_size.height <= border_size * 2) {
-            return;
+        if (max_size.width) |max_width| {
+            if (max_width <= border_size * 2) return;
+        }
+        if (max_size.height) |max_height| {
+            if (max_height <= border_size * 2) return;
         }
         var width: usize = 0;
         var height: usize = 0;
-        var remaining_width = max_size.width - (border_size * 2);
-        var remaining_height = max_size.height - (border_size * 2);
+        var remaining_width_maybe = if (max_size.width) |max_width| max_width - (border_size * 2) else null;
+        var remaining_height_maybe = if (max_size.height) |max_height| max_height - (border_size * 2) else null;
         for (self.children.items) |*child| {
-            if (remaining_width <= 0 or remaining_height <= 0) {
-                break;
+            if (remaining_width_maybe) |remaining_width| {
+                if (remaining_width <= 0) break;
             }
-            try child.build(.{ .width = remaining_width, .height = remaining_height });
+            if (remaining_height_maybe) |remaining_height| {
+                if (remaining_height <= 0) break;
+            }
+            try child.build(.{ .width = remaining_width_maybe, .height = remaining_height_maybe });
             if (child.grid()) |child_grid| {
                 switch (self.direction) {
                     .vert => {
-                        remaining_height -= child_grid.size.height;
+                        if (remaining_height_maybe) |*remaining_height| remaining_height.* -= child_grid.size.height;
                         width = @max(width, child_grid.size.width);
                         height += child_grid.size.height;
                     },
                     .horiz => {
-                        remaining_width -= child_grid.size.width;
+                        if (remaining_width_maybe) |*remaining_width| remaining_width.* -= child_grid.size.width;
                         width += child_grid.size.width;
                         height = @max(height, child_grid.size.height);
                     },
@@ -410,9 +453,6 @@ pub const Box = struct {
         }
         width += border_size * 2;
         height += border_size * 2;
-        if (width > max_size.width or height > max_size.height) {
-            return;
-        }
         var grid = try Grid.init(self.allocator, .{ .width = width, .height = height });
         errdefer grid.deinit();
         switch (self.direction) {
@@ -578,7 +618,7 @@ pub const TextBox = struct {
 
     pub const BuildError = error{};
 
-    pub fn build(self: *TextBox, max_size: Size) Widget.BuildError!void {
+    pub fn build(self: *TextBox, max_size: MaxSize) Widget.BuildError!void {
         self.grid = null;
         try self.box.build(max_size);
         self.grid = self.box.grid;
@@ -588,6 +628,65 @@ pub const TextBox = struct {
 
     pub fn input(self: *TextBox, byte: u8) Widget.InputError!void {
         try self.box.input(byte);
+    }
+};
+
+pub const Scroll = struct {
+    allocator: std.mem.Allocator,
+    grid: ?Grid,
+    widget: *Widget,
+    x: usize,
+    y: usize,
+    direction: Direction,
+
+    pub const Direction = enum {
+        vert,
+        horiz,
+        both,
+    };
+
+    pub const InitError = error{OutOfMemory};
+
+    pub fn init(allocator: std.mem.Allocator, widget: Widget, direction: Direction) InitError!Scroll {
+        var ptr = try allocator.create(Widget);
+        ptr.* = widget;
+        return .{
+            .allocator = allocator,
+            .grid = null,
+            .widget = ptr,
+            .x = 0,
+            .y = 0,
+            .direction = direction,
+        };
+    }
+
+    pub fn deinit(self: *Scroll) void {
+        self.widget.deinit();
+        self.allocator.destroy(self.widget);
+    }
+
+    pub const BuildError = Grid.InitFromGridError;
+
+    pub fn build(self: *Scroll, max_size: MaxSize) Widget.BuildError!void {
+        if (self.grid) |*grid| {
+            grid.deinit();
+            self.grid = null;
+        }
+        const child_max_size: MaxSize = switch (self.direction) {
+            .vert => .{ .width = max_size.width, .height = null },
+            .horiz => .{ .width = null, .height = max_size.height },
+            .both => .{ .width = null, .height = null },
+        };
+        try self.widget.build(child_max_size);
+        if (self.widget.grid()) |child_grid| {
+            self.grid = try Grid.initFromGrid(self.allocator, child_grid, .{ .width = child_grid.size.width, .height = child_grid.size.height }, self.x, self.y);
+        }
+    }
+
+    pub const InputError = error{};
+
+    pub fn input(self: *Scroll, byte: u8) Widget.InputError!void {
+        try self.widget.input(byte);
     }
 };
 
@@ -648,9 +747,10 @@ pub const GitInfo = struct {
         self.bufs.deinit();
     }
 
-    pub const BuildError = std.mem.Allocator.Error || Text.BuildError || TextBox.InitError;
+    pub const BuildError = std.mem.Allocator.Error || Box.BuildError || Text.BuildError || TextBox.InitError || Scroll.InitError || Scroll.BuildError;
 
-    pub fn build(self: *GitInfo, max_size: Size) BuildError!void {
+    pub fn build(self: *GitInfo, max_size: MaxSize) BuildError!void {
+        const old_box_maybe = self.box;
         self.box = null;
         self.grid = null;
 
@@ -662,7 +762,15 @@ pub const GitInfo = struct {
             errdefer text_box.deinit();
             try commits.append(Widget{ .text_box = text_box });
         }
-        var left_box = try Box.init(self.allocator, commits.items, null, .vert);
+        const left_box = try Box.init(self.allocator, commits.items, null, .vert);
+        var left_scroll = try Scroll.init(self.allocator, Widget{ .box = left_box }, .vert);
+        // manually get the old scroll position
+        // TODO: we won't have to do this once we have stateful widgets
+        if (old_box_maybe) |old_box| {
+            const old_scroll = old_box.children.items[0].scroll;
+            left_scroll.x = old_scroll.x;
+            left_scroll.y = old_scroll.y;
+        }
 
         var diffs = std.ArrayList(Widget).init(self.allocator);
         defer diffs.deinit();
@@ -671,9 +779,9 @@ pub const GitInfo = struct {
             errdefer text_box.deinit();
             try diffs.append(Widget{ .text_box = text_box });
         }
-        var right_box = try Box.init(self.allocator, diffs.items, null, .vert);
+        const right_box = try Box.init(self.allocator, diffs.items, null, .vert);
 
-        var box_contents = [_]Widget{ Widget{ .box = left_box }, Widget{ .box = right_box } };
+        var box_contents = [_]Widget{ Widget{ .scroll = left_scroll }, Widget{ .box = right_box } };
         var box = try Box.init(self.allocator, &box_contents, null, .horiz);
         errdefer box.deinit();
 
@@ -695,6 +803,14 @@ pub const GitInfo = struct {
             } else if (std.mem.eql(u8, esc_slice, "[B")) {
                 if (self.index + 1 < self.commits.items.len) {
                     self.index += 1;
+                }
+            } else if (std.mem.eql(u8, esc_slice, "[C")) {
+                if (self.box) |box| {
+                    box.children.items[0].scroll.y += 1;
+                }
+            } else if (std.mem.eql(u8, esc_slice, "[D")) {
+                if (self.box) |box| {
+                    box.children.items[0].scroll.y -|= 1;
                 }
             }
 
@@ -754,7 +870,7 @@ fn tick() !void {
     else
         true;
     if (refresh) {
-        try root.build(root_size);
+        try root.build(.{ .width = root_size.width, .height = root_size.height });
         try clearRect(term.tty.writer(), 0, 0, root_size); // TODO: clear the screen more efficiently
     }
 
@@ -776,7 +892,7 @@ fn tick() !void {
             return error.TerminalQuit;
         } else {
             try root.input(buffer[0]);
-            try root.build(root_size);
+            try root.build(.{ .width = root_size.width, .height = root_size.height });
             try clearRect(term.tty.writer(), 0, 0, root_size); // TODO: clear the screen more efficiently
         }
     }

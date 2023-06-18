@@ -9,9 +9,9 @@ const NDSliceErrors = error{
 };
 
 pub const MemoryOrdering = enum {
-    // least Signficant dimension last: [z, y, x] where consecutive x's are contiguous
+    // least signficant dimension last: [z, y, x] where consecutive x's are contiguous
     row_major,
-    // least Signficant dimension first: [z, y, x] where consecutive z's are contiguous
+    // least signficant dimension first: [z, y, x] where consecutive z's are contiguous
     col_major,
 };
 
@@ -58,7 +58,7 @@ pub fn NDSlice(comptime T: type, comptime N: comptime_int, comptime order_val: M
 
                     comptime var i = 1;
                     inline while (i < N) : (i += 1) {
-                        linear_index = linear_index * self.shape[i] + index[i]; // Single fused multiply add
+                        linear_index = linear_index * self.shape[i] + index[i]; // single fused multiply add
                     }
 
                     break :blk linear_index;
