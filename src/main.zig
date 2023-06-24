@@ -57,9 +57,9 @@ pub const Terminal = struct {
 
     pub fn updateSize(self: *Terminal) !void {
         var win_size = std.mem.zeroes(system.winsize);
-        const err = system.ioctl(term.tty.handle, system.T.IOCGWINSZ, @ptrToInt(&win_size));
+        const err = system.ioctl(term.tty.handle, system.T.IOCGWINSZ, @intFromPtr(&win_size));
         if (std.os.errno(err) != .SUCCESS) {
-            return std.os.unexpectedErrno(@intToEnum(system.E, err));
+            return std.os.unexpectedErrno(@enumFromInt(system.E, err));
         }
         self.size = Size{
             .height = win_size.ws_row,
