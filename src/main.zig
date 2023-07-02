@@ -59,7 +59,7 @@ pub const Terminal = struct {
         var win_size = std.mem.zeroes(system.winsize);
         const err = system.ioctl(term.tty.handle, system.T.IOCGWINSZ, @intFromPtr(&win_size));
         if (std.os.errno(err) != .SUCCESS) {
-            return std.os.unexpectedErrno(@enumFromInt(system.E, err));
+            return std.os.unexpectedErrno(@enumFromInt(err));
         }
         self.size = Size{
             .height = win_size.ws_row,
@@ -905,7 +905,7 @@ pub fn main() !void {
 
     // find cwd
     var cwd_path_buffer = [_]u8{0} ** std.fs.MAX_PATH_BYTES;
-    const cwd_path = @ptrCast([*c]const u8, try std.fs.cwd().realpath(".", &cwd_path_buffer));
+    const cwd_path: [*c]const u8 = @ptrCast(try std.fs.cwd().realpath(".", &cwd_path_buffer));
 
     // init repo
     var repo: ?*c.git_repository = null;
