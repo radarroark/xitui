@@ -860,25 +860,58 @@ pub const GitInfo = struct {
     }
 };
 
-fn tick() !void {
+fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?Grid, last_size: *Size) !void {
     const root_size: Size = .{ .width = term.size.width, .height = term.size.height };
     if (root_size.width == 0 or root_size.height == 0) {
         return;
     }
-    const refresh = if (root.grid()) |grid|
-        grid.size.width != root_size.width or grid.size.height != root_size.height
-    else
-        true;
-    if (refresh) {
-        try root.build(.{ .width = root_size.width, .height = root_size.height });
-        try clearRect(term.tty.writer(), 0, 0, root_size); // TODO: clear the screen more efficiently
+
+    if (last_grid_maybe.*) |*last_grid| {
+        var force_refresh = false;
+        if (last_size.*.width != root_size.width or last_size.*.height != root_size.height) {
+            force_refresh = true;
+        } else if (root.grid()) |grid| {
+            if (last_grid.size.width != grid.size.width or last_grid.size.height != grid.size.height) {
+                force_refresh = true;
+            }
+        }
+        if (force_refresh) {
+            last_grid.deinit();
+            last_grid_maybe.* = null;
+        }
     }
 
-    if (root.grid()) |grid| {
-        for (0..grid.size.height) |y| {
-            for (0..grid.size.width) |x| {
-                if (grid.cells.items[try grid.cells.at(.{ y, x })].rune) |rune| {
-                    try term.write(rune, x, y);
+    if (last_grid_maybe.*) |last_grid| {
+        if (root.grid()) |grid| {
+            // clear cells that are in last grid but not current grid
+            for (0..last_grid.size.height) |y| {
+                for (0..last_grid.size.width) |x| {
+                    if (grid.cells.items[try grid.cells.at(.{ y, x })].rune == null) {
+                        try term.write(" ", x, y);
+                    }
+                }
+            }
+            // render current grid
+            for (0..grid.size.height) |y| {
+                for (0..grid.size.width) |x| {
+                    if (grid.cells.items[try grid.cells.at(.{ y, x })].rune) |rune| {
+                        try term.write(rune, x, y);
+                    }
+                }
+            }
+        }
+    } else {
+        try root.build(.{ .width = root_size.width, .height = root_size.height });
+        try clearRect(term.tty.writer(), 0, 0, root_size);
+        last_size.* = root_size;
+
+        if (root.grid()) |grid| {
+            last_grid_maybe.* = try Grid.initFromGrid(allocator, grid, grid.size, 0, 0);
+            for (0..grid.size.height) |y| {
+                for (0..grid.size.width) |x| {
+                    if (grid.cells.items[try grid.cells.at(.{ y, x })].rune) |rune| {
+                        try term.write(rune, x, y);
+                    }
                 }
             }
         }
@@ -893,7 +926,6 @@ fn tick() !void {
         } else {
             try root.input(buffer[0]);
             try root.build(.{ .width = root_size.width, .height = root_size.height });
-            try clearRect(term.tty.writer(), 0, 0, root_size); // TODO: clear the screen more efficiently
         }
     }
 }
@@ -926,8 +958,11 @@ pub fn main() !void {
     term.raw.cc[system.V.MIN] = 0;
     try std.os.tcsetattr(term.tty.handle, .NOW, term.raw);
 
+    var last_grid_maybe: ?Grid = null;
+    var last_size: Size = .{ .width = 0, .height = 0 };
+
     while (true) {
-        tick() catch |err| {
+        tick(allocator, &last_grid_maybe, &last_size) catch |err| {
             switch (err) {
                 error.TerminalQuit => break,
                 else => return err,
