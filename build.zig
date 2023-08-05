@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     exe.linkLibC();
-    exe.addIncludePath("src/deps/libgit2/include");
+    exe.addIncludePath(.{ .path = "src/deps/libgit2/include" });
     exe.linkLibrary(git2.step);
     b.installArtifact(exe);
 
@@ -43,7 +43,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     unit_tests.linkLibC();
-    unit_tests.addIncludePath("src/deps/libgit2/include");
+    unit_tests.addIncludePath(.{ .path = "src/deps/libgit2/include" });
     unit_tests.linkLibrary(git2.step);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
