@@ -194,9 +194,7 @@ pub const Grid = struct {
     };
     pub const Cells = NDSlice(Cell, 2, .row_major);
 
-    pub const InitError = error{ OutOfMemory, IndexOutOfBounds, InsufficientBufferSize, ZeroLengthDimensionsNotSupported };
-
-    pub fn init(allocator: std.mem.Allocator, size: Size) InitError!Grid {
+    pub fn init(allocator: std.mem.Allocator, size: Size) !Grid {
         var buffer = try allocator.alloc(Grid.Cell, size.width * size.height);
         errdefer allocator.free(buffer);
         for (buffer) |*cell| {
@@ -210,9 +208,7 @@ pub const Grid = struct {
         };
     }
 
-    pub const InitFromGridError = error{ OutOfMemory, IndexOutOfBounds, InsufficientBufferSize, ZeroLengthDimensionsNotSupported };
-
-    pub fn initFromGrid(allocator: std.mem.Allocator, grid: Grid, size: Size, grid_x: usize, grid_y: usize) InitFromGridError!Grid {
+    pub fn initFromGrid(allocator: std.mem.Allocator, grid: Grid, size: Size, grid_x: usize, grid_y: usize) !Grid {
         // TODO: for now this is just copying from the source grid.
         // we really should just be getting a view into it, but i'm too lazy right now.
         var buffer = try allocator.alloc(Grid.Cell, size.width * size.height);
@@ -278,17 +274,13 @@ pub const Widget = union(enum) {
         }
     }
 
-    pub const BuildError = Error("BuildError");
-
-    pub fn build(self: *Widget, max_size: MaxSize) BuildError!void {
+    pub fn build(self: *Widget, max_size: MaxSize) anyerror!void {
         switch (self.*) {
             inline else => |*case| try case.build(max_size),
         }
     }
 
-    pub const InputError = Error("InputError");
-
-    pub fn input(self: *Widget, byte: u8) InputError!void {
+    pub fn input(self: *Widget, byte: u8) anyerror!void {
         switch (self.*) {
             inline else => |*case| try case.input(byte),
         }
@@ -298,19 +290,6 @@ pub const Widget = union(enum) {
         switch (self.*) {
             inline else => |*case| return case.grid,
         }
-    }
-
-    // returns error union that combines the error unions
-    // from all the branches of Widget. we have to do this
-    // because zig can't infer the error sets above due to
-    // the use of recursion. is this radar's first use of
-    // metaprogramming in zig? looks like it!
-    fn Error(comptime field_name: []const u8) type {
-        var err = error{};
-        inline for (@typeInfo(Widget).Union.fields) |field| {
-            err = err || @field(field.type, field_name);
-        }
-        return err;
     }
 };
 
@@ -333,9 +312,7 @@ pub const Text = struct {
         }
     }
 
-    pub const BuildError = error{ InvalidUtf8, TruncatedInput, Utf8CodepointTooLarge, Utf8EncodesSurrogateHalf, Utf8ExpectedContinuation, Utf8OverlongEncoding, Utf8InvalidStartByte } || Grid.InitError;
-
-    pub fn build(self: *Text, max_size: MaxSize) BuildError!void {
+    pub fn build(self: *Text, max_size: MaxSize) !void {
         if (self.grid) |*grid| {
             grid.deinit();
             self.grid = null;
@@ -355,9 +332,7 @@ pub const Text = struct {
         self.grid = grid;
     }
 
-    pub const InputError = error{};
-
-    pub fn input(self: *Text, byte: u8) InputError!void {
+    pub fn input(self: *Text, byte: u8) !void {
         _ = self;
         _ = byte;
     }
@@ -381,9 +356,7 @@ pub const Box = struct {
         horiz,
     };
 
-    pub const InitError = error{OutOfMemory};
-
-    pub fn init(allocator: std.mem.Allocator, widgets: []Widget, border_style: ?BorderStyle, direction: Direction) InitError!Box {
+    pub fn init(allocator: std.mem.Allocator, widgets: []Widget, border_style: ?BorderStyle, direction: Direction) !Box {
         var children = std.ArrayList(Widget).init(allocator);
         errdefer children.deinit();
         for (widgets) |widget| {
@@ -408,9 +381,7 @@ pub const Box = struct {
         }
     }
 
-    pub const BuildError = error{};
-
-    pub fn build(self: *Box, max_size: MaxSize) Widget.BuildError!void {
+    pub fn build(self: *Box, max_size: MaxSize) !void {
         if (self.grid) |*grid| {
             grid.deinit();
             self.grid = null;
@@ -545,9 +516,7 @@ pub const Box = struct {
         self.grid = grid;
     }
 
-    pub const InputError = error{};
-
-    pub fn input(self: *Box, byte: u8) Widget.InputError!void {
+    pub fn input(self: *Box, byte: u8) !void {
         for (self.children.items) |*child| {
             try child.input(byte);
         }
@@ -561,9 +530,7 @@ pub const TextBox = struct {
     border_style: ?Box.BorderStyle,
     lines: std.ArrayList(std.ArrayList(u8)),
 
-    pub const InitError = error{ EndOfStream, StreamTooLong, OutOfMemory } || Box.InitError;
-
-    pub fn init(allocator: std.mem.Allocator, content: []const u8, border_style: ?Box.BorderStyle) InitError!TextBox {
+    pub fn init(allocator: std.mem.Allocator, content: []const u8, border_style: ?Box.BorderStyle) !TextBox {
         var lines = std.ArrayList(std.ArrayList(u8)).init(allocator);
         errdefer {
             for (lines.items) |*line| {
@@ -616,17 +583,13 @@ pub const TextBox = struct {
         self.lines.deinit();
     }
 
-    pub const BuildError = error{};
-
-    pub fn build(self: *TextBox, max_size: MaxSize) Widget.BuildError!void {
+    pub fn build(self: *TextBox, max_size: MaxSize) !void {
         self.grid = null;
         try self.box.build(max_size);
         self.grid = self.box.grid;
     }
 
-    pub const InputError = error{};
-
-    pub fn input(self: *TextBox, byte: u8) Widget.InputError!void {
+    pub fn input(self: *TextBox, byte: u8) !void {
         try self.box.input(byte);
     }
 };
@@ -645,9 +608,7 @@ pub const Scroll = struct {
         both,
     };
 
-    pub const InitError = error{OutOfMemory};
-
-    pub fn init(allocator: std.mem.Allocator, widget: Widget, direction: Direction) InitError!Scroll {
+    pub fn init(allocator: std.mem.Allocator, widget: Widget, direction: Direction) !Scroll {
         var ptr = try allocator.create(Widget);
         ptr.* = widget;
         return .{
@@ -665,9 +626,7 @@ pub const Scroll = struct {
         self.allocator.destroy(self.widget);
     }
 
-    pub const BuildError = Grid.InitFromGridError;
-
-    pub fn build(self: *Scroll, max_size: MaxSize) Widget.BuildError!void {
+    pub fn build(self: *Scroll, max_size: MaxSize) !void {
         if (self.grid) |*grid| {
             grid.deinit();
             self.grid = null;
@@ -683,9 +642,7 @@ pub const Scroll = struct {
         }
     }
 
-    pub const InputError = error{};
-
-    pub fn input(self: *Scroll, byte: u8) Widget.InputError!void {
+    pub fn input(self: *Scroll, byte: u8) !void {
         try self.widget.input(byte);
     }
 };
@@ -699,9 +656,7 @@ pub const GitInfo = struct {
     index: u32 = 0,
     bufs: std.ArrayList(c.git_buf),
 
-    pub const InitError = error{ TestExpectedEqual, OutOfMemory };
-
-    pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository, index: u32) InitError!GitInfo {
+    pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository, index: u32) !GitInfo {
         // init walker
         var walker: ?*c.git_revwalk = null;
         try expectEqual(0, c.git_revwalk_new(&walker, repo));
@@ -747,9 +702,7 @@ pub const GitInfo = struct {
         self.bufs.deinit();
     }
 
-    pub const BuildError = std.mem.Allocator.Error || Box.BuildError || Text.BuildError || TextBox.InitError || Scroll.InitError || Scroll.BuildError;
-
-    pub fn build(self: *GitInfo, max_size: MaxSize) BuildError!void {
+    pub fn build(self: *GitInfo, max_size: MaxSize) !void {
         const old_box_maybe = self.box;
         self.box = null;
         self.grid = null;
@@ -790,9 +743,7 @@ pub const GitInfo = struct {
         self.grid = box.grid;
     }
 
-    pub const InputError = std.os.TermiosSetError || std.fs.File.ReadError || error{ TestExpectedEqual, OutOfMemory };
-
-    pub fn input(self: *GitInfo, byte: u8) InputError!void {
+    pub fn input(self: *GitInfo, byte: u8) !void {
         if (byte == '\x1B') {
             var esc_buffer: [8]u8 = undefined;
             const esc_read = try term.tty.read(&esc_buffer);
