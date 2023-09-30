@@ -48,6 +48,7 @@ pub const Text = struct {
     pub fn deinit(self: *Text) void {
         if (self.grid) |*grid| {
             grid.deinit();
+            self.grid = null;
         }
     }
 
@@ -118,6 +119,7 @@ pub fn Box(comptime Widget: type) type {
             self.children.deinit();
             if (self.grid) |*grid| {
                 grid.deinit();
+                self.grid = null;
             }
         }
 
@@ -327,6 +329,7 @@ pub fn TextBox(comptime Widget: type) type {
 
         pub fn build(self: *TextBox(Widget), max_size: MaxSize) !void {
             self.grid = null;
+            self.box.border_style = self.border_style;
             try self.box.build(max_size);
             self.grid = self.box.grid;
         }
@@ -341,7 +344,7 @@ pub fn Scroll(comptime Widget: type) type {
     return struct {
         allocator: std.mem.Allocator,
         grid: ?grd.Grid,
-        widget: *Any(Widget),
+        child: *Any(Widget),
         x: usize,
         y: usize,
         direction: Direction,
@@ -358,7 +361,7 @@ pub fn Scroll(comptime Widget: type) type {
             return .{
                 .allocator = allocator,
                 .grid = null,
-                .widget = ptr,
+                .child = ptr,
                 .x = 0,
                 .y = 0,
                 .direction = direction,
@@ -366,8 +369,12 @@ pub fn Scroll(comptime Widget: type) type {
         }
 
         pub fn deinit(self: *Scroll(Widget)) void {
-            self.widget.deinit();
-            self.allocator.destroy(self.widget);
+            self.child.deinit();
+            self.allocator.destroy(self.child);
+            if (self.grid) |*grid| {
+                grid.deinit();
+                self.grid = null;
+            }
         }
 
         pub fn build(self: *Scroll(Widget), max_size: MaxSize) !void {
@@ -380,14 +387,14 @@ pub fn Scroll(comptime Widget: type) type {
                 .horiz => .{ .width = null, .height = max_size.height },
                 .both => .{ .width = null, .height = null },
             };
-            try self.widget.build(child_max_size);
-            if (self.widget.grid()) |child_grid| {
+            try self.child.build(child_max_size);
+            if (self.child.grid()) |child_grid| {
                 self.grid = try grd.Grid.initFromGrid(self.allocator, child_grid, .{ .width = child_grid.size.width, .height = child_grid.size.height }, self.x, self.y);
             }
         }
 
         pub fn input(self: *Scroll(Widget), byte: u8) !void {
-            try self.widget.input(byte);
+            try self.child.input(byte);
         }
     };
 }

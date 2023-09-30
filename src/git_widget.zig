@@ -91,7 +91,7 @@ pub fn GitInfo(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitInfo(Widget), max_size: MaxSize) !void {
-            for (self.box_wgt.children.items[0].widget.scroll.widget.widget.box.children.items, 0..) |*commit_wgt, i| {
+            for (self.box_wgt.children.items[0].widget.scroll.child.widget.box.children.items, 0..) |*commit_wgt, i| {
                 commit_wgt.widget.text_box.border_style = if (self.index == i) .double else .single;
             }
 

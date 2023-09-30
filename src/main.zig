@@ -24,7 +24,7 @@ const Widget = union(enum) {
 var root: wgt.Any(Widget) = undefined;
 
 fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *Size) !void {
-    const root_size: Size = .{ .width = term.terminal.size.width, .height = term.terminal.size.height };
+    const root_size = Size{ .width = term.terminal.size.width, .height = term.terminal.size.height };
     if (root_size.width == 0 or root_size.height == 0) {
         return;
     }
@@ -108,7 +108,9 @@ pub fn main() !void {
     defer c.git_repository_free(repo);
 
     // init root widget
-    const allocator = std.heap.page_allocator;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
     root = wgt.Any(Widget){ .widget = .{ .git_info = try git_wgt.GitInfo(Widget).init(allocator, repo, 0) } };
     defer root.deinit();
 
@@ -118,7 +120,8 @@ pub fn main() !void {
     try term.setNonBlocking();
 
     var last_grid_maybe: ?grd.Grid = null;
-    var last_size: Size = .{ .width = 0, .height = 0 };
+    defer if (last_grid_maybe) |*last_grid| last_grid.deinit();
+    var last_size = Size{ .width = 0, .height = 0 };
 
     while (true) {
         tick(allocator, &last_grid_maybe, &last_size) catch |err| {
