@@ -1,8 +1,9 @@
 const std = @import("std");
 const grd = @import("./grid.zig");
-const common = @import("./common.zig");
-const MaxSize = common.MaxSize;
-const Rect = common.Rect;
+const size = @import("./size.zig");
+const MaxSize = size.MaxSize;
+const Rect = size.Rect;
+const inp = @import("./input.zig");
 
 pub fn Any(comptime Widget: type) type {
     return struct {
@@ -20,9 +21,9 @@ pub fn Any(comptime Widget: type) type {
             }
         }
 
-        pub fn input(self: *Any(Widget), byte: u8) anyerror!void {
+        pub fn input(self: *Any(Widget), key: inp.Key) anyerror!void {
             switch (self.widget) {
-                inline else => |*case| try case.input(byte),
+                inline else => |*case| try case.input(key),
             }
         }
 
@@ -74,9 +75,9 @@ pub const Text = struct {
         self.grid = grid;
     }
 
-    pub fn input(self: *Text, byte: u8) !void {
+    pub fn input(self: *Text, key: inp.Key) !void {
         _ = self;
-        _ = byte;
+        _ = key;
     }
 };
 
@@ -266,9 +267,9 @@ pub fn Box(comptime Widget: type) type {
             self.grid = grid;
         }
 
-        pub fn input(self: *Box(Widget), byte: u8) !void {
+        pub fn input(self: *Box(Widget), key: inp.Key) !void {
             for (self.children.items) |*child| {
-                try child.input(byte);
+                try child.input(key);
             }
         }
     };
@@ -342,8 +343,8 @@ pub fn TextBox(comptime Widget: type) type {
             self.grid = self.box.grid;
         }
 
-        pub fn input(self: *TextBox(Widget), byte: u8) !void {
-            try self.box.input(byte);
+        pub fn input(self: *TextBox(Widget), key: inp.Key) !void {
+            try self.box.input(key);
         }
     };
 }
@@ -401,8 +402,8 @@ pub fn Scroll(comptime Widget: type) type {
             }
         }
 
-        pub fn input(self: *Scroll(Widget), byte: u8) !void {
-            try self.child.input(byte);
+        pub fn input(self: *Scroll(Widget), key: inp.Key) !void {
+            try self.child.input(key);
         }
 
         pub fn scrollToRect(self: *Scroll(Widget), rect: Rect) void {

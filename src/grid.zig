@@ -1,5 +1,5 @@
 const std = @import("std");
-const Size = @import("./common.zig").Size;
+const Size = @import("./size.zig").Size;
 const NDSlice = @import("./ndslice.zig").NDSlice;
 
 pub const Grid = struct {

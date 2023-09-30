@@ -6,7 +6,7 @@ const system = switch (builtin.os.tag) {
     .uefi => std.os.uefi,
     else => std.os.system,
 };
-const Size = @import("./common.zig").Size;
+const Size = @import("./size.zig").Size;
 
 pub var terminal: Terminal = undefined;
 

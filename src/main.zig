@@ -7,7 +7,8 @@ const term = @import("./terminal.zig");
 const wgt = @import("./widget.zig");
 const grd = @import("./grid.zig");
 const git_wgt = @import("./git_widget.zig");
-const Size = @import("./common.zig").Size;
+const Size = @import("./size.zig").Size;
+const inp = @import("./input.zig");
 
 const c = @cImport({
     @cInclude("git2.h");
@@ -80,16 +81,56 @@ fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *S
         }
     }
 
-    var buffer: [1]u8 = undefined;
+    var buffer: [32]u8 = undefined;
     const size = try term.terminal.tty.read(&buffer);
+    var esc_maybe: ?std.ArrayList(u21) = null;
+    defer if (esc_maybe) |esc| esc.deinit();
 
     if (size > 0) {
-        if (buffer[0] == 'q') {
-            return error.TerminalQuit;
-        } else {
-            try root.input(buffer[0]);
-            try root.build(.{ .width = root_size.width, .height = root_size.height });
+        const text = std.unicode.Utf8View.init(buffer[0..size]) catch return;
+        var iter = text.iterator();
+        while (iter.nextCodepoint()) |codepoint| {
+            // if we are in an esc sequence
+            if (esc_maybe) |*esc| {
+                // sequence must start with [
+                if (esc.items.len == 0) {
+                    if (codepoint == '[') {
+                        try esc.append(codepoint);
+                    } else {
+                        esc.clearAndFree();
+                        esc_maybe = null;
+                    }
+                    continue;
+                }
+
+                switch (codepoint) {
+                    // chars that terminate the sequence
+                    0x40...0x7E => {
+                        const key: inp.Key = switch (codepoint) {
+                            'A' => .arrow_up,
+                            'B' => .arrow_down,
+                            'C' => .arrow_right,
+                            'D' => .arrow_left,
+                            else => .unknown,
+                        };
+                        esc.clearAndFree();
+                        esc_maybe = null;
+                        try root.input(key);
+                    },
+                    // add all other chars to the esc sequence
+                    else => try esc.append(codepoint),
+                }
+            }
+            // not in an esc sequence
+            else {
+                switch (codepoint) {
+                    'q' => return error.TerminalQuit,
+                    '\x1B' => esc_maybe = std.ArrayList(u21).init(allocator),
+                    else => try root.input(.{ .codepoint = codepoint }),
+                }
+            }
         }
+        try root.build(.{ .width = root_size.width, .height = root_size.height });
     }
 }
 

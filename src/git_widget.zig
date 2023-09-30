@@ -2,7 +2,8 @@ const std = @import("std");
 const term = @import("./terminal.zig");
 const wgt = @import("./widget.zig");
 const grd = @import("./grid.zig");
-const MaxSize = @import("./common.zig").MaxSize;
+const MaxSize = @import("./size.zig").MaxSize;
+const inp = @import("./input.zig");
 
 const c = @cImport({
     @cInclude("git2.h");
@@ -99,23 +100,21 @@ pub fn GitInfo(comptime Widget: type) type {
             self.grid = self.box_wgt.grid;
         }
 
-        pub fn input(self: *GitInfo(Widget), byte: u8) !void {
-            if (byte == '\x1B') {
-                var esc_buffer: [8]u8 = undefined;
-                const esc_read = try term.terminal.tty.read(&esc_buffer);
-                const esc_slice = esc_buffer[0..esc_read];
-
-                if (std.mem.eql(u8, esc_slice, "[A")) {
+        pub fn input(self: *GitInfo(Widget), key: inp.Key) !void {
+            switch (key) {
+                .arrow_up => {
                     self.index -|= 1;
                     self.updateScroll();
-                } else if (std.mem.eql(u8, esc_slice, "[B")) {
+                    try self.updateDiff();
+                },
+                .arrow_down => {
                     if (self.index + 1 < self.commits.items.len) {
                         self.index += 1;
                     }
                     self.updateScroll();
-                }
-
-                try self.updateDiff();
+                    try self.updateDiff();
+                },
+                else => {},
             }
         }
 
