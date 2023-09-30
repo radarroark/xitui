@@ -345,8 +345,8 @@ pub fn Scroll(comptime Widget: type) type {
         allocator: std.mem.Allocator,
         grid: ?grd.Grid,
         child: *Any(Widget),
-        x: usize,
-        y: usize,
+        x: isize,
+        y: isize,
         direction: Direction,
 
         pub const Direction = enum {

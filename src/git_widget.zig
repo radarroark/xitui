@@ -114,7 +114,7 @@ pub fn GitInfo(comptime Widget: type) type {
                 } else if (std.mem.eql(u8, esc_slice, "[C")) {
                     self.box_wgt.children.items[0].widget.scroll.y += 1;
                 } else if (std.mem.eql(u8, esc_slice, "[D")) {
-                    self.box_wgt.children.items[0].widget.scroll.y -|= 1;
+                    self.box_wgt.children.items[0].widget.scroll.y -= 1;
                 }
 
                 try self.updateDiff();
