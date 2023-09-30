@@ -83,64 +83,15 @@ fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *S
 
     var buffer: [32]u8 = undefined;
     const size = try term.terminal.tty.read(&buffer);
-    var esc_maybe: ?std.ArrayList(u8) = null;
-    defer if (esc_maybe) |esc| esc.deinit();
+    var esc = std.ArrayList(u8).init(allocator);
+    defer esc.deinit();
 
     if (size > 0) {
         const text = std.unicode.Utf8View.init(buffer[0..size]) catch return;
         var iter = text.iterator();
         while (iter.nextCodepoint()) |codepoint| {
-            // if we are in an esc sequence
-            if (esc_maybe) |*esc| {
-                // esc sequences should be ascii-only
-                const byte: u8 = std.math.cast(u8, codepoint) orelse continue;
-
-                // sequence must start with [
-                if (esc.items.len == 0) {
-                    if (byte == '[') {
-                        try esc.append(byte);
-                    } else {
-                        esc.clearAndFree();
-                        esc_maybe = null;
-                    }
-                    continue;
-                }
-
-                switch (byte) {
-                    // chars that terminate the sequence
-                    0x40...0x7E => {
-                        const key: inp.Key = switch (byte) {
-                            'A' => .arrow_up,
-                            'B' => .arrow_down,
-                            'C' => .arrow_right,
-                            'D' => .arrow_left,
-                            '~' => if (std.mem.eql(u8, esc.items, "[1"))
-                                .home
-                            else if (std.mem.eql(u8, esc.items, "[4"))
-                                .end
-                            else if (std.mem.eql(u8, esc.items, "[5"))
-                                .page_up
-                            else if (std.mem.eql(u8, esc.items, "[6"))
-                                .page_down
-                            else
-                                .unknown,
-                            else => .unknown,
-                        };
-                        esc.clearAndFree();
-                        esc_maybe = null;
-                        try root.input(key);
-                    },
-                    // add all other chars to the esc sequence
-                    else => try esc.append(byte),
-                }
-            }
-            // not in an esc sequence
-            else {
-                switch (codepoint) {
-                    'q' => return error.TerminalQuit,
-                    '\x1B' => esc_maybe = std.ArrayList(u8).init(allocator),
-                    else => try root.input(.{ .codepoint = codepoint }),
-                }
+            if (try inp.Key.init(codepoint, &esc)) |key| {
+                try root.input(key);
             }
         }
         try root.build(.{ .width = root_size.width, .height = root_size.height });
