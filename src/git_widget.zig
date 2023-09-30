@@ -107,17 +107,24 @@ pub fn GitInfo(comptime Widget: type) type {
 
                 if (std.mem.eql(u8, esc_slice, "[A")) {
                     self.index -|= 1;
+                    self.updateScroll();
                 } else if (std.mem.eql(u8, esc_slice, "[B")) {
                     if (self.index + 1 < self.commits.items.len) {
                         self.index += 1;
                     }
-                } else if (std.mem.eql(u8, esc_slice, "[C")) {
-                    self.box_wgt.children.items[0].widget.scroll.y += 1;
-                } else if (std.mem.eql(u8, esc_slice, "[D")) {
-                    self.box_wgt.children.items[0].widget.scroll.y -= 1;
+                    self.updateScroll();
                 }
 
                 try self.updateDiff();
+            }
+        }
+
+        fn updateScroll(self: *GitInfo(Widget)) void {
+            var left_scroll = &self.box_wgt.children.items[0].widget.scroll;
+            var left_box = &left_scroll.child.widget.box;
+            if (left_box.child_rects.items.len > self.index) {
+                const rect = left_box.child_rects.items[self.index];
+                left_scroll.scrollToRect(rect);
             }
         }
 

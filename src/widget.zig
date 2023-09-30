@@ -1,6 +1,8 @@
 const std = @import("std");
 const grd = @import("./grid.zig");
-const MaxSize = @import("./common.zig").MaxSize;
+const common = @import("./common.zig");
+const MaxSize = common.MaxSize;
+const Rect = common.Rect;
 
 pub fn Any(comptime Widget: type) type {
     return struct {
@@ -58,7 +60,7 @@ pub const Text = struct {
             self.grid = null;
         }
         const width = try std.unicode.utf8CountCodepoints(self.content);
-        var grid = try grd.Grid.init(self.allocator, .{ .width = @max(1, @min(max_size.width orelse width, width)), .height = @max(1, @min(max_size.height orelse 1, 1)) });
+        var grid = try grd.Grid.init(self.allocator, .{ .width = std.math.clamp(width, 1, max_size.width orelse width), .height = 1 });
         errdefer grid.deinit();
         var utf8 = (try std.unicode.Utf8View.init(self.content)).iterator();
         var i: u32 = 0;
@@ -83,6 +85,7 @@ pub fn Box(comptime Widget: type) type {
         grid: ?grd.Grid,
         allocator: std.mem.Allocator,
         children: std.ArrayList(Any(Widget)),
+        child_rects: std.ArrayList(Rect),
         border_style: ?BorderStyle,
         direction: Direction,
 
@@ -107,6 +110,7 @@ pub fn Box(comptime Widget: type) type {
                 .grid = null,
                 .allocator = allocator,
                 .children = children,
+                .child_rects = std.ArrayList(Rect).init(allocator),
                 .border_style = border_style,
                 .direction = direction,
             };
@@ -117,6 +121,7 @@ pub fn Box(comptime Widget: type) type {
                 child.deinit();
             }
             self.children.deinit();
+            self.child_rects.deinit();
             if (self.grid) |*grid| {
                 grid.deinit();
                 self.grid = null;
@@ -128,6 +133,7 @@ pub fn Box(comptime Widget: type) type {
                 grid.deinit();
                 self.grid = null;
             }
+            self.child_rects.clearAndFree();
             const border_size: usize = if (self.border_style) |_| 1 else 0;
             if (max_size.width) |max_width| {
                 if (max_width <= border_size * 2) return;
@@ -173,6 +179,7 @@ pub fn Box(comptime Widget: type) type {
                     var line: usize = 0;
                     for (self.children.items) |*child| {
                         if (child.grid()) |child_grid| {
+                            try self.child_rects.append(.{ .x = 0, .y = @as(isize, @intCast(line + border_size)), .size = child_grid.size });
                             for (0..child_grid.size.height) |y| {
                                 for (0..child_grid.size.width) |x| {
                                     const rune = child_grid.cells.items[try child_grid.cells.at(.{ y, x })].rune;
@@ -191,6 +198,7 @@ pub fn Box(comptime Widget: type) type {
                     var col: usize = 0;
                     for (self.children.items) |*child| {
                         if (child.grid()) |child_grid| {
+                            try self.child_rects.append(.{ .x = @as(isize, @intCast(col + border_size)), .y = 0, .size = child_grid.size });
                             for (0..child_grid.size.width) |x| {
                                 for (0..child_grid.size.height) |y| {
                                     const rune = child_grid.cells.items[try child_grid.cells.at(.{ y, x })].rune;
@@ -389,12 +397,41 @@ pub fn Scroll(comptime Widget: type) type {
             };
             try self.child.build(child_max_size);
             if (self.child.grid()) |child_grid| {
-                self.grid = try grd.Grid.initFromGrid(self.allocator, child_grid, .{ .width = child_grid.size.width, .height = child_grid.size.height }, self.x, self.y);
+                self.grid = try grd.Grid.initFromGrid(self.allocator, child_grid, .{ .width = std.math.clamp(child_grid.size.width, 1, max_size.width orelse child_grid.size.width), .height = std.math.clamp(child_grid.size.height, 1, max_size.height orelse child_grid.size.height) }, self.x, self.y);
             }
         }
 
         pub fn input(self: *Scroll(Widget), byte: u8) !void {
             try self.child.input(byte);
+        }
+
+        pub fn scrollToRect(self: *Scroll(Widget), rect: Rect) void {
+            if (self.grid) |grid| {
+                if (self.direction == .horiz or self.direction == .both) {
+                    if (rect.x < self.x) {
+                        self.x -= self.x - rect.x;
+                    } else {
+                        const rect_x = rect.x + @as(isize, @intCast(rect.size.width));
+                        const self_x = self.x + @as(isize, @intCast(grid.size.width));
+                        self.x += if (rect_x > self_x)
+                            rect_x - self_x
+                        else
+                            0;
+                    }
+                }
+                if (self.direction == .vert or self.direction == .both) {
+                    if (rect.y < self.y) {
+                        self.y -= self.y - rect.y;
+                    } else {
+                        const rect_y = rect.y + @as(isize, @intCast(rect.size.height));
+                        const self_y = self.y + @as(isize, @intCast(grid.size.height));
+                        self.y += if (rect_y > self_y)
+                            rect_y - self_y
+                        else
+                            0;
+                    }
+                }
+            }
         }
     };
 }
