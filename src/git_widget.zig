@@ -11,7 +11,7 @@ const c = @cImport({
 pub fn GitInfo(comptime Widget: type) type {
     return struct {
         grid: ?grd.Grid,
-        box: ?wgt.Box(Widget),
+        box_wgt: wgt.Box(Widget),
         allocator: std.mem.Allocator,
         repo: ?*c.git_repository,
         commits: std.ArrayList(?*c.git_commit),
@@ -39,9 +39,34 @@ pub fn GitInfo(comptime Widget: type) type {
                 try commits.append(commit);
             }
 
+            // init commit_wgts
+            var commit_wgts = std.ArrayList(wgt.Any(Widget)).init(allocator);
+            defer commit_wgts.deinit();
+            for (commits.items) |commit| {
+                const line = std.mem.sliceTo(c.git_commit_message(commit), '\n');
+                var text_box = try wgt.TextBox(Widget).init(allocator, line, .single);
+                errdefer text_box.deinit();
+                try commit_wgts.append(wgt.Any(Widget){ .widget = .{ .text_box = text_box } });
+            }
+
+            // init left_scroll_wgt
+            var left_box = try wgt.Box(Widget).init(allocator, commit_wgts.items, null, .vert);
+            errdefer left_box.deinit();
+            var left_scroll_wgt = try wgt.Scroll(Widget).init(allocator, wgt.Any(Widget){ .widget = .{ .box = left_box } }, .vert);
+            errdefer left_scroll_wgt.deinit();
+
+            // init right_box_wgt
+            var right_box_wgt = try wgt.Box(Widget).init(allocator, &[_]wgt.Any(Widget){}, null, .vert);
+            errdefer right_box_wgt.deinit();
+
+            // init box_wgt
+            var box_contents = [_]wgt.Any(Widget){ wgt.Any(Widget){ .widget = .{ .scroll = left_scroll_wgt } }, wgt.Any(Widget){ .widget = .{ .box = right_box_wgt } } };
+            var box_wgt = try wgt.Box(Widget).init(allocator, &box_contents, null, .horiz);
+            errdefer box_wgt.deinit();
+
             var git_info = GitInfo(Widget){
                 .grid = null,
-                .box = null,
+                .box_wgt = box_wgt,
                 .allocator = allocator,
                 .repo = repo,
                 .commits = commits,
@@ -62,47 +87,16 @@ pub fn GitInfo(comptime Widget: type) type {
                 c.git_buf_dispose(buf);
             }
             self.bufs.deinit();
+            self.box_wgt.deinit();
         }
 
         pub fn build(self: *GitInfo(Widget), max_size: MaxSize) !void {
-            const old_box_maybe = self.box;
-            self.box = null;
-            self.grid = null;
-
-            var commits = std.ArrayList(wgt.Any(Widget)).init(self.allocator);
-            defer commits.deinit();
-            for (self.commits.items, 0..) |commit, i| {
-                const line = std.mem.sliceTo(c.git_commit_message(commit), '\n');
-                var text_box = try wgt.TextBox(Widget).init(self.allocator, line, if (self.index == i) .double else .single);
-                errdefer text_box.deinit();
-                try commits.append(wgt.Any(Widget){ .widget = .{ .text_box = text_box } });
-            }
-            const left_box = try wgt.Box(Widget).init(self.allocator, commits.items, null, .vert);
-            var left_scroll = try wgt.Scroll(Widget).init(self.allocator, wgt.Any(Widget){ .widget = .{ .box = left_box } }, .vert);
-            // manually get the old scroll position
-            // TODO: we won't have to do this once we have stateful widgets
-            if (old_box_maybe) |old_box| {
-                const old_scroll = old_box.children.items[0].widget.scroll;
-                left_scroll.x = old_scroll.x;
-                left_scroll.y = old_scroll.y;
+            for (self.box_wgt.children.items[0].widget.scroll.widget.widget.box.children.items, 0..) |*commit_wgt, i| {
+                commit_wgt.widget.text_box.border_style = if (self.index == i) .double else .single;
             }
 
-            var diffs = std.ArrayList(wgt.Any(Widget)).init(self.allocator);
-            defer diffs.deinit();
-            for (self.bufs.items) |buf| {
-                var text_box = try wgt.TextBox(Widget).init(self.allocator, std.mem.sliceTo(buf.ptr, 0), .hidden);
-                errdefer text_box.deinit();
-                try diffs.append(wgt.Any(Widget){ .widget = .{ .text_box = text_box } });
-            }
-            const right_box = try wgt.Box(Widget).init(self.allocator, diffs.items, null, .vert);
-
-            var box_contents = [_]wgt.Any(Widget){ wgt.Any(Widget){ .widget = .{ .scroll = left_scroll } }, wgt.Any(Widget){ .widget = .{ .box = right_box } } };
-            var box = try wgt.Box(Widget).init(self.allocator, &box_contents, null, .horiz);
-            errdefer box.deinit();
-
-            try box.build(max_size);
-            self.box = box;
-            self.grid = box.grid;
+            try self.box_wgt.build(max_size);
+            self.grid = self.box_wgt.grid;
         }
 
         pub fn input(self: *GitInfo(Widget), byte: u8) !void {
@@ -118,13 +112,9 @@ pub fn GitInfo(comptime Widget: type) type {
                         self.index += 1;
                     }
                 } else if (std.mem.eql(u8, esc_slice, "[C")) {
-                    if (self.box) |box| {
-                        box.children.items[0].widget.scroll.y += 1;
-                    }
+                    self.box_wgt.children.items[0].widget.scroll.y += 1;
                 } else if (std.mem.eql(u8, esc_slice, "[D")) {
-                    if (self.box) |box| {
-                        box.children.items[0].widget.scroll.y -|= 1;
-                    }
+                    self.box_wgt.children.items[0].widget.scroll.y -|= 1;
                 }
 
                 try self.updateDiff();
@@ -169,6 +159,19 @@ pub fn GitInfo(comptime Widget: type) type {
                     errdefer c.git_buf_dispose(&commit_buf);
                     try self.bufs.append(commit_buf);
                 }
+            }
+
+            // remove old diff widgets
+            for (self.box_wgt.children.items[1].widget.box.children.items) |*child| {
+                child.deinit();
+            }
+            self.box_wgt.children.items[1].widget.box.children.clearAndFree();
+
+            // add new diff widgets
+            for (self.bufs.items) |buf| {
+                var text_box = try wgt.TextBox(Widget).init(self.allocator, std.mem.sliceTo(buf.ptr, 0), .hidden);
+                errdefer text_box.deinit();
+                try self.box_wgt.children.items[1].widget.box.children.append(wgt.Any(Widget){ .widget = .{ .text_box = text_box } });
             }
         }
     };
