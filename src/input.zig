@@ -4,5 +4,9 @@ pub const Key = union(enum) {
     arrow_down,
     arrow_right,
     arrow_left,
+    home,
+    end,
+    page_up,
+    page_down,
     codepoint: u21,
 };

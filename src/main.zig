@@ -83,7 +83,7 @@ fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *S
 
     var buffer: [32]u8 = undefined;
     const size = try term.terminal.tty.read(&buffer);
-    var esc_maybe: ?std.ArrayList(u21) = null;
+    var esc_maybe: ?std.ArrayList(u8) = null;
     defer if (esc_maybe) |esc| esc.deinit();
 
     if (size > 0) {
@@ -92,10 +92,13 @@ fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *S
         while (iter.nextCodepoint()) |codepoint| {
             // if we are in an esc sequence
             if (esc_maybe) |*esc| {
+                // esc sequences should be ascii-only
+                const byte: u8 = std.math.cast(u8, codepoint) orelse continue;
+
                 // sequence must start with [
                 if (esc.items.len == 0) {
-                    if (codepoint == '[') {
-                        try esc.append(codepoint);
+                    if (byte == '[') {
+                        try esc.append(byte);
                     } else {
                         esc.clearAndFree();
                         esc_maybe = null;
@@ -103,14 +106,24 @@ fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *S
                     continue;
                 }
 
-                switch (codepoint) {
+                switch (byte) {
                     // chars that terminate the sequence
                     0x40...0x7E => {
-                        const key: inp.Key = switch (codepoint) {
+                        const key: inp.Key = switch (byte) {
                             'A' => .arrow_up,
                             'B' => .arrow_down,
                             'C' => .arrow_right,
                             'D' => .arrow_left,
+                            '~' => if (std.mem.eql(u8, esc.items, "[1"))
+                                .home
+                            else if (std.mem.eql(u8, esc.items, "[4"))
+                                .end
+                            else if (std.mem.eql(u8, esc.items, "[5"))
+                                .page_up
+                            else if (std.mem.eql(u8, esc.items, "[6"))
+                                .page_down
+                            else
+                                .unknown,
                             else => .unknown,
                         };
                         esc.clearAndFree();
@@ -118,14 +131,14 @@ fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *S
                         try root.input(key);
                     },
                     // add all other chars to the esc sequence
-                    else => try esc.append(codepoint),
+                    else => try esc.append(byte),
                 }
             }
             // not in an esc sequence
             else {
                 switch (codepoint) {
                     'q' => return error.TerminalQuit,
-                    '\x1B' => esc_maybe = std.ArrayList(u21).init(allocator),
+                    '\x1B' => esc_maybe = std.ArrayList(u8).init(allocator),
                     else => try root.input(.{ .codepoint = codepoint }),
                 }
             }

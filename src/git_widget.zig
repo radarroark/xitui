@@ -16,7 +16,7 @@ pub fn GitInfo(comptime Widget: type) type {
         allocator: std.mem.Allocator,
         repo: ?*c.git_repository,
         commits: std.ArrayList(?*c.git_commit),
-        index: u32 = 0,
+        index: usize = 0,
         bufs: std.ArrayList(c.git_buf),
 
         pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository, index: u32) !GitInfo(Widget) {
@@ -113,6 +113,36 @@ pub fn GitInfo(comptime Widget: type) type {
                     }
                     self.updateScroll();
                     try self.updateDiff();
+                },
+                .home => {
+                    self.index = 0;
+                    self.updateScroll();
+                    try self.updateDiff();
+                },
+                .end => {
+                    if (self.commits.items.len > 0) {
+                        self.index = self.commits.items.len - 1;
+                        self.updateScroll();
+                        try self.updateDiff();
+                    }
+                },
+                .page_up => {
+                    if (self.grid) |grid| {
+                        const half_count = (grid.size.height / 3) / 2;
+                        self.index -|= half_count;
+                        self.updateScroll();
+                        try self.updateDiff();
+                    }
+                },
+                .page_down => {
+                    if (self.grid) |grid| {
+                        if (self.commits.items.len > 0) {
+                            const half_count = (grid.size.height / 3) / 2;
+                            self.index = @min(self.index + half_count, self.commits.items.len - 1);
+                            self.updateScroll();
+                            try self.updateDiff();
+                        }
+                    }
                 },
                 else => {},
             }
