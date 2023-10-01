@@ -7,7 +7,7 @@ const term = @import("./terminal.zig");
 const wgt = @import("./widget.zig");
 const grd = @import("./grid.zig");
 const git_wgt = @import("./git_widget.zig");
-const Size = @import("./size.zig").Size;
+const Size = @import("./layout.zig").Size;
 const inp = @import("./input.zig");
 
 const c = @cImport({

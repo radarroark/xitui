@@ -2,7 +2,7 @@ const std = @import("std");
 const term = @import("./terminal.zig");
 const wgt = @import("./widget.zig");
 const grd = @import("./grid.zig");
-const MaxSize = @import("./size.zig").MaxSize;
+const MaxSize = @import("./layout.zig").MaxSize;
 const inp = @import("./input.zig");
 
 const c = @cImport({

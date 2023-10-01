@@ -1,8 +1,8 @@
 const std = @import("std");
 const grd = @import("./grid.zig");
-const size = @import("./size.zig");
-const MaxSize = size.MaxSize;
-const Rect = size.Rect;
+const layout = @import("./layout.zig");
+const MaxSize = layout.MaxSize;
+const Rect = layout.Rect;
 const inp = @import("./input.zig");
 
 pub fn Any(comptime Widget: type) type {
