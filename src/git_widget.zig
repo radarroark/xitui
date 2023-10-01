@@ -67,11 +67,20 @@ pub fn GitInfo(comptime Widget: type) type {
             var right_box = try wgt.Box(Widget).init(allocator, null, .vert);
             errdefer right_box.deinit();
 
+            // init right_scroll
+            var right_scroll = try wgt.Scroll(Widget).init(allocator, wgt.Any(Widget).init(.{ .box = right_box }), .vert);
+            errdefer right_scroll.deinit();
+
+            // init right_outer_box
+            var right_outer_box = try wgt.Box(Widget).init(allocator, null, .vert);
+            errdefer right_outer_box.deinit();
+            try right_outer_box.children.append(wgt.Any(Widget).init(.{ .scroll = right_scroll }));
+
             // init box
             var box = try wgt.Box(Widget).init(allocator, null, .horiz);
             errdefer box.deinit();
             try box.children.append(wgt.Any(Widget).init(.{ .scroll = left_scroll }));
-            try box.children.append(wgt.Any(Widget).init(.{ .box = right_box }));
+            try box.children.append(wgt.Any(Widget).init(.{ .box = right_outer_box }));
 
             var git_info = GitInfo(Widget){
                 .grid = null,
@@ -129,7 +138,11 @@ pub fn GitInfo(comptime Widget: type) type {
                             self.updateScroll();
                             try self.updateDiff();
                         },
-                        .diff => {},
+                        .diff => {
+                            if (self.box.children.items[1].widget.box.children.items[0].widget.scroll.y > 0) {
+                                self.box.children.items[1].widget.box.children.items[0].widget.scroll.y -= 1;
+                            }
+                        },
                     }
                 },
                 .arrow_down => {
@@ -141,7 +154,19 @@ pub fn GitInfo(comptime Widget: type) type {
                             self.updateScroll();
                             try self.updateDiff();
                         },
-                        .diff => {},
+                        .diff => {
+                            if (self.box.children.items[1].widget.box.grid) |outer_box_grid| {
+                                const outer_box_height = outer_box_grid.size.height - 2;
+                                const scroll_y = self.box.children.items[1].widget.box.children.items[0].widget.scroll.y;
+                                const u_scroll_y: usize = if (scroll_y >= 0) @intCast(scroll_y) else 0;
+                                if (self.box.children.items[1].widget.box.children.items[0].widget.scroll.child.widget.box.grid) |inner_box_grid| {
+                                    const inner_box_height = inner_box_grid.size.height;
+                                    if (outer_box_height + u_scroll_y < inner_box_height) {
+                                        self.box.children.items[1].widget.box.children.items[0].widget.scroll.y += 1;
+                                    }
+                                }
+                            }
+                        },
                     }
                 },
                 .arrow_right => {
@@ -167,7 +192,9 @@ pub fn GitInfo(comptime Widget: type) type {
                             self.updateScroll();
                             try self.updateDiff();
                         },
-                        .diff => {},
+                        .diff => {
+                            self.box.children.items[1].widget.box.children.items[0].widget.scroll.y = 0;
+                        },
                     }
                 },
                 .end => {
@@ -179,7 +206,16 @@ pub fn GitInfo(comptime Widget: type) type {
                                 try self.updateDiff();
                             }
                         },
-                        .diff => {},
+                        .diff => {
+                            if (self.box.children.items[1].widget.box.grid) |outer_box_grid| {
+                                if (self.box.children.items[1].widget.box.children.items[0].widget.scroll.child.widget.box.grid) |inner_box_grid| {
+                                    const outer_box_height = outer_box_grid.size.height - 2;
+                                    const inner_box_height = inner_box_grid.size.height;
+                                    const max_scroll: isize = if (inner_box_height > outer_box_height) @intCast(inner_box_height - outer_box_height) else 0;
+                                    self.box.children.items[1].widget.box.children.items[0].widget.scroll.y = max_scroll;
+                                }
+                            }
+                        },
                     }
                 },
                 .page_up => {
@@ -192,7 +228,14 @@ pub fn GitInfo(comptime Widget: type) type {
                                 try self.updateDiff();
                             }
                         },
-                        .diff => {},
+                        .diff => {
+                            if (self.box.children.items[1].widget.box.grid) |outer_box_grid| {
+                                const outer_box_height = outer_box_grid.size.height - 2;
+                                const scroll_y = self.box.children.items[1].widget.box.children.items[0].widget.scroll.y;
+                                const scroll_change: isize = @intCast(outer_box_height / 2);
+                                self.box.children.items[1].widget.box.children.items[0].widget.scroll.y = @max(0, scroll_y - scroll_change);
+                            }
+                        },
                     }
                 },
                 .page_down => {
@@ -207,7 +250,18 @@ pub fn GitInfo(comptime Widget: type) type {
                                 }
                             }
                         },
-                        .diff => {},
+                        .diff => {
+                            if (self.box.children.items[1].widget.box.grid) |outer_box_grid| {
+                                if (self.box.children.items[1].widget.box.children.items[0].widget.scroll.child.widget.box.grid) |inner_box_grid| {
+                                    const outer_box_height = outer_box_grid.size.height - 2;
+                                    const inner_box_height = inner_box_grid.size.height;
+                                    const max_scroll: isize = if (inner_box_height > outer_box_height) @intCast(inner_box_height - outer_box_height) else 0;
+                                    const scroll_y = self.box.children.items[1].widget.box.children.items[0].widget.scroll.y;
+                                    const scroll_change: isize = @intCast(outer_box_height / 2);
+                                    self.box.children.items[1].widget.box.children.items[0].widget.scroll.y = @min(scroll_y + scroll_change, max_scroll);
+                                }
+                            }
+                        },
                     }
                 },
                 else => {},
@@ -264,17 +318,20 @@ pub fn GitInfo(comptime Widget: type) type {
             }
 
             // remove old diff widgets
-            for (self.box.children.items[1].widget.box.children.items) |*child| {
+            for (self.box.children.items[1].widget.box.children.items[0].widget.scroll.child.widget.box.children.items) |*child| {
                 child.deinit();
             }
-            self.box.children.items[1].widget.box.children.clearAndFree();
+            self.box.children.items[1].widget.box.children.items[0].widget.scroll.child.widget.box.children.clearAndFree();
 
             // add new diff widgets
             for (self.bufs.items) |buf| {
                 var text_box = try wgt.TextBox(Widget).init(self.allocator, std.mem.sliceTo(buf.ptr, 0), .hidden);
                 errdefer text_box.deinit();
-                try self.box.children.items[1].widget.box.children.append(wgt.Any(Widget).init(.{ .text_box = text_box }));
+                try self.box.children.items[1].widget.box.children.items[0].widget.scroll.child.widget.box.children.append(wgt.Any(Widget).init(.{ .text_box = text_box }));
             }
+
+            // reset scroll position
+            self.box.children.items[1].widget.box.children.items[0].widget.scroll.y = 0;
         }
     };
 }
