@@ -37,16 +37,20 @@ pub const Key = union(enum) {
                         'B' => .arrow_down,
                         'C' => .arrow_right,
                         'D' => .arrow_left,
-                        '~' => if (std.mem.eql(u8, esc.items[2..], "1"))
-                            .home
-                        else if (std.mem.eql(u8, esc.items[2..], "4"))
-                            .end
-                        else if (std.mem.eql(u8, esc.items[2..], "5"))
-                            .page_up
-                        else if (std.mem.eql(u8, esc.items[2..], "6"))
-                            .page_down
-                        else
-                            .unknown,
+                        '~' => blk: {
+                            var codes = std.mem.splitSequence(u8, esc.items[2..], ";");
+                            const code = codes.first();
+                            break :blk if (std.mem.eql(u8, code, "1"))
+                                .home
+                            else if (std.mem.eql(u8, code, "4"))
+                                .end
+                            else if (std.mem.eql(u8, code, "5"))
+                                .page_up
+                            else if (std.mem.eql(u8, code, "6"))
+                                .page_down
+                            else
+                                .unknown;
+                        },
                         else => .unknown,
                     };
                     esc.clearAndFree();
