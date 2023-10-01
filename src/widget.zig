@@ -2,12 +2,26 @@ const std = @import("std");
 const grd = @import("./grid.zig");
 const layout = @import("./layout.zig");
 const MaxSize = layout.MaxSize;
-const Rect = layout.Rect;
 const inp = @import("./input.zig");
 
 pub fn Any(comptime Widget: type) type {
     return struct {
         widget: Widget,
+        size_fn: ?*const fn (max_size: MaxSize) MaxSize,
+
+        pub fn init(widget: Widget) Any(Widget) {
+            return .{
+                .widget = widget,
+                .size_fn = null,
+            };
+        }
+
+        pub fn initWithSizeFn(widget: Widget, size_fn: *const fn (max_size: MaxSize) MaxSize) Any(Widget) {
+            return .{
+                .widget = widget,
+                .size_fn = size_fn,
+            };
+        }
 
         pub fn deinit(self: *Any(Widget)) void {
             switch (self.widget) {
@@ -16,8 +30,9 @@ pub fn Any(comptime Widget: type) type {
         }
 
         pub fn build(self: *Any(Widget), max_size: MaxSize) anyerror!void {
+            const new_max_size = if (self.size_fn) |size_fn| size_fn(max_size) else max_size;
             switch (self.widget) {
-                inline else => |*case| try case.build(max_size),
+                inline else => |*case| try case.build(new_max_size),
             }
         }
 
@@ -86,7 +101,7 @@ pub fn Box(comptime Widget: type) type {
         grid: ?grd.Grid,
         allocator: std.mem.Allocator,
         children: std.ArrayList(Any(Widget)),
-        child_rects: std.ArrayList(Rect),
+        child_rects: std.ArrayList(layout.Rect),
         border_style: ?BorderStyle,
         direction: Direction,
 
@@ -108,7 +123,7 @@ pub fn Box(comptime Widget: type) type {
                 .grid = null,
                 .allocator = allocator,
                 .children = children,
-                .child_rects = std.ArrayList(Rect).init(allocator),
+                .child_rects = std.ArrayList(layout.Rect).init(allocator),
                 .border_style = border_style,
                 .direction = direction,
             };
@@ -310,7 +325,7 @@ pub fn TextBox(comptime Widget: type) type {
             for (lines.items) |line| {
                 var text = Text.init(allocator, line.items);
                 errdefer text.deinit();
-                try box.children.append(Any(Widget){ .widget = .{ .text = text } });
+                try box.children.append(Any(Widget).init(.{ .text = text }));
             }
 
             return .{
@@ -400,7 +415,7 @@ pub fn Scroll(comptime Widget: type) type {
             try self.child.input(key);
         }
 
-        pub fn scrollToRect(self: *Scroll(Widget), rect: Rect) void {
+        pub fn scrollToRect(self: *Scroll(Widget), rect: layout.Rect) void {
             if (self.grid) |grid| {
                 if (self.direction == .horiz or self.direction == .both) {
                     if (rect.x < self.x) {

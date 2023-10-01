@@ -47,11 +47,19 @@ pub fn GitInfo(comptime Widget: type) type {
                 const line = std.mem.sliceTo(c.git_commit_message(commit), '\n');
                 var text_box = try wgt.TextBox(Widget).init(allocator, line, .single);
                 errdefer text_box.deinit();
-                try left_box.children.append(wgt.Any(Widget){ .widget = .{ .text_box = text_box } });
+                try left_box.children.append(wgt.Any(Widget).init(.{ .text_box = text_box }));
             }
+            const size_fn = struct {
+                fn size(max_size: MaxSize) MaxSize {
+                    return .{
+                        .width = if (max_size.width) |width| width / 2 else null,
+                        .height = max_size.height,
+                    };
+                }
+            }.size;
 
             // init left_scroll
-            var left_scroll = try wgt.Scroll(Widget).init(allocator, wgt.Any(Widget){ .widget = .{ .box = left_box } }, .vert);
+            var left_scroll = try wgt.Scroll(Widget).init(allocator, wgt.Any(Widget).initWithSizeFn(.{ .box = left_box }, size_fn), .vert);
             errdefer left_scroll.deinit();
 
             // init right_box
@@ -61,8 +69,8 @@ pub fn GitInfo(comptime Widget: type) type {
             // init box
             var box = try wgt.Box(Widget).init(allocator, null, .horiz);
             errdefer box.deinit();
-            try box.children.append(wgt.Any(Widget){ .widget = .{ .scroll = left_scroll } });
-            try box.children.append(wgt.Any(Widget){ .widget = .{ .box = right_box } });
+            try box.children.append(wgt.Any(Widget).init(.{ .scroll = left_scroll }));
+            try box.children.append(wgt.Any(Widget).init(.{ .box = right_box }));
 
             var git_info = GitInfo(Widget){
                 .grid = null,
@@ -206,7 +214,7 @@ pub fn GitInfo(comptime Widget: type) type {
             for (self.bufs.items) |buf| {
                 var text_box = try wgt.TextBox(Widget).init(self.allocator, std.mem.sliceTo(buf.ptr, 0), .hidden);
                 errdefer text_box.deinit();
-                try self.box.children.items[1].widget.box.children.append(wgt.Any(Widget){ .widget = .{ .text_box = text_box } });
+                try self.box.children.items[1].widget.box.children.append(wgt.Any(Widget).init(.{ .text_box = text_box }));
             }
         }
     };
