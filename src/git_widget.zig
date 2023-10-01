@@ -113,7 +113,7 @@ pub fn GitInfo(comptime Widget: type) type {
             switch (self.page) {
                 .commit_list => {
                     for (self.box.children.items[0].widget.scroll.child.widget.box.children.items, 0..) |*commit, i| {
-                        commit.widget.text_box.border_style = if (self.commit_index == i) .double else .single;
+                        commit.widget.text_box.border_style = if (self.commit_index == i) .double else .hidden;
                     }
                     self.box.children.items[1].widget.box.border_style = .hidden;
                 },
