@@ -116,7 +116,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    root = wgt.Any(Widget).init(.{ .git_info = try git_wgt.GitInfo(Widget).init(allocator, repo, 0) });
+    root = wgt.Any(Widget).init(.{ .git_info = try git_wgt.GitInfo(Widget).init(allocator, repo) });
     defer root.deinit();
 
     // init term
