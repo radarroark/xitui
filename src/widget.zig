@@ -101,12 +101,9 @@ pub fn Box(comptime Widget: type) type {
             horiz,
         };
 
-        pub fn init(allocator: std.mem.Allocator, widgets: []Any(Widget), border_style: ?BorderStyle, direction: Direction) !Box(Widget) {
+        pub fn init(allocator: std.mem.Allocator, border_style: ?BorderStyle, direction: Direction) !Box(Widget) {
             var children = std.ArrayList(Any(Widget)).init(allocator);
             errdefer children.deinit();
-            for (widgets) |widget| {
-                try children.append(widget);
-            }
             return .{
                 .grid = null,
                 .allocator = allocator,
@@ -308,16 +305,13 @@ pub fn TextBox(comptime Widget: type) type {
                 }
             }
 
-            var widgets = std.ArrayList(Any(Widget)).init(allocator);
-            defer widgets.deinit();
+            var box = try Box(Widget).init(allocator, border_style, .vert);
+            errdefer box.deinit();
             for (lines.items) |line| {
                 var text = Text.init(allocator, line.items);
                 errdefer text.deinit();
-                try widgets.append(Any(Widget){ .widget = .{ .text = text } });
+                try box.children.append(Any(Widget){ .widget = .{ .text = text } });
             }
-
-            var box = try Box(Widget).init(allocator, widgets.items, border_style, .vert);
-            errdefer box.deinit();
 
             return .{
                 .allocator = allocator,
