@@ -68,7 +68,7 @@ pub fn GitInfo(comptime Widget: type) type {
             errdefer right_box.deinit();
 
             // init right_scroll
-            var right_scroll = try wgt.Scroll(Widget).init(allocator, wgt.Any(Widget).init(.{ .box = right_box }), .vert);
+            var right_scroll = try wgt.Scroll(Widget).init(allocator, wgt.Any(Widget).init(.{ .box = right_box }), .both);
             errdefer right_scroll.deinit();
 
             // init right_outer_box
@@ -169,19 +169,31 @@ pub fn GitInfo(comptime Widget: type) type {
                         },
                     }
                 },
-                .arrow_right => {
-                    switch (self.page) {
-                        .commit_list => {
-                            self.page = .diff;
-                        },
-                        .diff => {},
-                    }
-                },
                 .arrow_left => {
                     switch (self.page) {
                         .commit_list => {},
                         .diff => {
-                            self.page = .commit_list;
+                            if (self.box.children.items[1].widget.box.children.items[0].widget.scroll.x > 0) {
+                                self.box.children.items[1].widget.box.children.items[0].widget.scroll.x -= 1;
+                            }
+                        },
+                    }
+                },
+                .arrow_right => {
+                    switch (self.page) {
+                        .commit_list => {},
+                        .diff => {
+                            if (self.box.children.items[1].widget.box.grid) |outer_box_grid| {
+                                const outer_box_width = outer_box_grid.size.width - 2;
+                                const scroll_x = self.box.children.items[1].widget.box.children.items[0].widget.scroll.x;
+                                const u_scroll_x: usize = if (scroll_x >= 0) @intCast(scroll_x) else 0;
+                                if (self.box.children.items[1].widget.box.children.items[0].widget.scroll.child.widget.box.grid) |inner_box_grid| {
+                                    const inner_box_width = inner_box_grid.size.width;
+                                    if (outer_box_width + u_scroll_x < inner_box_width) {
+                                        self.box.children.items[1].widget.box.children.items[0].widget.scroll.x += 1;
+                                    }
+                                }
+                            }
                         },
                     }
                 },
@@ -264,6 +276,27 @@ pub fn GitInfo(comptime Widget: type) type {
                         },
                     }
                 },
+                .codepoint => {
+                    switch (key.codepoint) {
+                        13 => {
+                            switch (self.page) {
+                                .commit_list => {
+                                    self.page = .diff;
+                                },
+                                .diff => {},
+                            }
+                        },
+                        127 => {
+                            switch (self.page) {
+                                .commit_list => {},
+                                .diff => {
+                                    self.page = .commit_list;
+                                },
+                            }
+                        },
+                        else => {},
+                    }
+                },
                 else => {},
             }
         }
@@ -331,6 +364,7 @@ pub fn GitInfo(comptime Widget: type) type {
             }
 
             // reset scroll position
+            self.box.children.items[1].widget.box.children.items[0].widget.scroll.x = 0;
             self.box.children.items[1].widget.box.children.items[0].widget.scroll.y = 0;
         }
     };

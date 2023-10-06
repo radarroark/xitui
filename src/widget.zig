@@ -76,7 +76,7 @@ pub const Text = struct {
             self.grid = null;
         }
         const width = try std.unicode.utf8CountCodepoints(self.content);
-        var grid = try grd.Grid.init(self.allocator, .{ .width = std.math.clamp(width, 1, max_size.width orelse width), .height = 1 });
+        var grid = try grd.Grid.init(self.allocator, .{ .width = @max(1, @min(width, max_size.width orelse width)), .height = 1 });
         errdefer grid.deinit();
         var utf8 = (try std.unicode.Utf8View.init(self.content)).iterator();
         var i: u32 = 0;
@@ -407,7 +407,10 @@ pub fn Scroll(comptime Widget: type) type {
             };
             try self.child.build(child_max_size);
             if (self.child.grid()) |child_grid| {
-                self.grid = try grd.Grid.initFromGrid(self.allocator, child_grid, .{ .width = std.math.clamp(child_grid.size.width, 1, max_size.width orelse child_grid.size.width), .height = std.math.clamp(child_grid.size.height, 1, max_size.height orelse child_grid.size.height) }, self.x, self.y);
+                self.grid = try grd.Grid.initFromGrid(self.allocator, child_grid, .{
+                    .width = @max(1, @min(child_grid.size.width, max_size.width orelse child_grid.size.width)),
+                    .height = @max(1, @min(child_grid.size.height, max_size.height orelse child_grid.size.height)),
+                }, self.x, self.y);
             }
         }
 
