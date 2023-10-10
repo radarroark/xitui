@@ -228,6 +228,44 @@ pub fn GitDiff(comptime Widget: type) type {
                 else => {},
             }
         }
+
+        pub fn updateDiff(self: *GitDiff(Widget), commit_diff: ?*c.git_diff) !void {
+            for (self.bufs.items) |*buf| {
+                c.git_buf_dispose(buf);
+            }
+            self.bufs.clearAndFree();
+
+            const delta_count = c.git_diff_num_deltas(commit_diff);
+            for (0..delta_count) |delta_index| {
+                var commit_patch: ?*c.git_patch = null;
+                std.debug.assert(0 == c.git_patch_from_diff(&commit_patch, commit_diff, delta_index));
+                defer c.git_patch_free(commit_patch);
+
+                var commit_buf: c.git_buf = std.mem.zeroes(c.git_buf);
+                std.debug.assert(0 == c.git_patch_to_buf(&commit_buf, commit_patch));
+                {
+                    errdefer c.git_buf_dispose(&commit_buf);
+                    try self.bufs.append(commit_buf);
+                }
+            }
+
+            // remove old diff widgets
+            for (self.box.children.items[0].any.widget.scroll.child.widget.box.children.items) |*child| {
+                child.any.deinit();
+            }
+            self.box.children.items[0].any.widget.scroll.child.widget.box.children.clearAndFree();
+
+            // add new diff widgets
+            for (self.bufs.items) |buf| {
+                var text_box = try wgt.TextBox(Widget).init(self.allocator, std.mem.sliceTo(buf.ptr, 0), .hidden);
+                errdefer text_box.deinit();
+                try self.box.children.items[0].any.widget.scroll.child.widget.box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null });
+            }
+
+            // reset scroll position
+            self.box.children.items[0].any.widget.scroll.x = 0;
+            self.box.children.items[0].any.widget.scroll.y = 0;
+        }
     };
 }
 
@@ -352,12 +390,6 @@ pub fn GitInfo(comptime Widget: type) type {
 
         fn updateDiff(self: *GitInfo(Widget)) !void {
             const commit_list = &self.box.children.items[0].any.widget.git_commit_list;
-            var diff = &self.box.children.items[1].any.widget.git_diff;
-
-            for (diff.bufs.items) |*buf| {
-                c.git_buf_dispose(buf);
-            }
-            diff.bufs.clearAndFree();
 
             const commit = commit_list.commits.items[commit_list.commit_index];
 
@@ -379,36 +411,8 @@ pub fn GitInfo(comptime Widget: type) type {
             std.debug.assert(0 == c.git_diff_tree_to_tree(&commit_diff, self.repo, prev_commit_tree, commit_tree, null));
             defer c.git_diff_free(commit_diff);
 
-            const delta_count = c.git_diff_num_deltas(commit_diff);
-            for (0..delta_count) |delta_index| {
-                var commit_patch: ?*c.git_patch = null;
-                std.debug.assert(0 == c.git_patch_from_diff(&commit_patch, commit_diff, delta_index));
-                defer c.git_patch_free(commit_patch);
-
-                var commit_buf: c.git_buf = std.mem.zeroes(c.git_buf);
-                std.debug.assert(0 == c.git_patch_to_buf(&commit_buf, commit_patch));
-                {
-                    errdefer c.git_buf_dispose(&commit_buf);
-                    try diff.bufs.append(commit_buf);
-                }
-            }
-
-            // remove old diff widgets
-            for (diff.box.children.items[0].any.widget.scroll.child.widget.box.children.items) |*child| {
-                child.any.deinit();
-            }
-            diff.box.children.items[0].any.widget.scroll.child.widget.box.children.clearAndFree();
-
-            // add new diff widgets
-            for (diff.bufs.items) |buf| {
-                var text_box = try wgt.TextBox(Widget).init(self.allocator, std.mem.sliceTo(buf.ptr, 0), .hidden);
-                errdefer text_box.deinit();
-                try diff.box.children.items[0].any.widget.scroll.child.widget.box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null });
-            }
-
-            // reset scroll position
-            diff.box.children.items[0].any.widget.scroll.x = 0;
-            diff.box.children.items[0].any.widget.scroll.y = 0;
+            var diff = &self.box.children.items[1].any.widget.git_diff;
+            try diff.updateDiff(commit_diff);
         }
     };
 }
