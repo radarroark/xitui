@@ -1,13 +1,13 @@
 const std = @import("std");
 const grd = @import("./grid.zig");
 const layout = @import("./layout.zig");
-const MaxSize = layout.MaxSize;
+const MaybeSize = layout.MaybeSize;
 const inp = @import("./input.zig");
 
 pub fn Any(comptime Widget: type) type {
     return struct {
         widget: Widget,
-        size_fn: ?*const fn (max_size: MaxSize) MaxSize,
+        size_fn: ?*const fn (max_size: MaybeSize) MaybeSize,
 
         pub fn init(widget: Widget) Any(Widget) {
             return .{
@@ -16,7 +16,7 @@ pub fn Any(comptime Widget: type) type {
             };
         }
 
-        pub fn initWithSizeFn(widget: Widget, size_fn: *const fn (max_size: MaxSize) MaxSize) Any(Widget) {
+        pub fn initWithSizeFn(widget: Widget, size_fn: *const fn (max_size: MaybeSize) MaybeSize) Any(Widget) {
             return .{
                 .widget = widget,
                 .size_fn = size_fn,
@@ -29,7 +29,7 @@ pub fn Any(comptime Widget: type) type {
             }
         }
 
-        pub fn build(self: *Any(Widget), max_size: MaxSize) anyerror!void {
+        pub fn build(self: *Any(Widget), max_size: MaybeSize) anyerror!void {
             const new_max_size = if (self.size_fn) |size_fn| size_fn(max_size) else max_size;
             switch (self.widget) {
                 inline else => |*case| try case.build(new_max_size),
@@ -70,7 +70,7 @@ pub const Text = struct {
         }
     }
 
-    pub fn build(self: *Text, max_size: MaxSize) !void {
+    pub fn build(self: *Text, max_size: MaybeSize) !void {
         if (self.grid) |*grid| {
             grid.deinit();
             self.grid = null;
@@ -100,10 +100,14 @@ pub fn Box(comptime Widget: type) type {
     return struct {
         grid: ?grd.Grid,
         allocator: std.mem.Allocator,
-        children: std.ArrayList(Any(Widget)),
-        child_rects: std.ArrayList(layout.Rect),
+        children: std.ArrayList(Child),
         border_style: ?BorderStyle,
         direction: Direction,
+
+        pub const Child = struct {
+            any: Any(Widget),
+            rect: ?layout.Rect,
+        };
 
         pub const BorderStyle = enum {
             hidden,
@@ -117,13 +121,12 @@ pub fn Box(comptime Widget: type) type {
         };
 
         pub fn init(allocator: std.mem.Allocator, border_style: ?BorderStyle, direction: Direction) !Box(Widget) {
-            var children = std.ArrayList(Any(Widget)).init(allocator);
+            var children = std.ArrayList(Child).init(allocator);
             errdefer children.deinit();
             return .{
                 .grid = null,
                 .allocator = allocator,
                 .children = children,
-                .child_rects = std.ArrayList(layout.Rect).init(allocator),
                 .border_style = border_style,
                 .direction = direction,
             };
@@ -131,22 +134,20 @@ pub fn Box(comptime Widget: type) type {
 
         pub fn deinit(self: *Box(Widget)) void {
             for (self.children.items) |*child| {
-                child.deinit();
+                child.any.deinit();
             }
             self.children.deinit();
-            self.child_rects.deinit();
             if (self.grid) |*grid| {
                 grid.deinit();
                 self.grid = null;
             }
         }
 
-        pub fn build(self: *Box(Widget), max_size: MaxSize) !void {
+        pub fn build(self: *Box(Widget), max_size: MaybeSize) !void {
             if (self.grid) |*grid| {
                 grid.deinit();
                 self.grid = null;
             }
-            self.child_rects.clearAndFree();
             const border_size: usize = if (self.border_style) |_| 1 else 0;
             if (max_size.width) |max_width| {
                 if (max_width <= border_size * 2) return;
@@ -165,8 +166,8 @@ pub fn Box(comptime Widget: type) type {
                 if (remaining_height_maybe) |remaining_height| {
                     if (remaining_height <= 0) break;
                 }
-                try child.build(.{ .width = remaining_width_maybe, .height = remaining_height_maybe });
-                if (child.grid()) |child_grid| {
+                try child.any.build(.{ .width = remaining_width_maybe, .height = remaining_height_maybe });
+                if (child.any.grid()) |child_grid| {
                     switch (self.direction) {
                         .vert => {
                             if (remaining_height_maybe) |*remaining_height| remaining_height.* -= child_grid.size.height;
@@ -191,8 +192,8 @@ pub fn Box(comptime Widget: type) type {
                 .vert => {
                     var line: usize = 0;
                     for (self.children.items) |*child| {
-                        if (child.grid()) |child_grid| {
-                            try self.child_rects.append(.{ .x = 0, .y = @as(isize, @intCast(line + border_size)), .size = child_grid.size });
+                        if (child.any.grid()) |child_grid| {
+                            child.rect = .{ .x = 0, .y = @as(isize, @intCast(line + border_size)), .size = child_grid.size };
                             for (0..child_grid.size.height) |y| {
                                 for (0..child_grid.size.width) |x| {
                                     const rune = child_grid.cells.items[try child_grid.cells.at(.{ y, x })].rune;
@@ -210,8 +211,8 @@ pub fn Box(comptime Widget: type) type {
                 .horiz => {
                     var col: usize = 0;
                     for (self.children.items) |*child| {
-                        if (child.grid()) |child_grid| {
-                            try self.child_rects.append(.{ .x = @as(isize, @intCast(col + border_size)), .y = 0, .size = child_grid.size });
+                        if (child.any.grid()) |child_grid| {
+                            child.rect = .{ .x = @as(isize, @intCast(col + border_size)), .y = 0, .size = child_grid.size };
                             for (0..child_grid.size.width) |x| {
                                 for (0..child_grid.size.height) |y| {
                                     const rune = child_grid.cells.items[try child_grid.cells.at(.{ y, x })].rune;
@@ -281,7 +282,7 @@ pub fn Box(comptime Widget: type) type {
 
         pub fn input(self: *Box(Widget), key: inp.Key) !void {
             for (self.children.items) |*child| {
-                try child.input(key);
+                try child.any.input(key);
             }
         }
     };
@@ -325,7 +326,7 @@ pub fn TextBox(comptime Widget: type) type {
             for (lines.items) |line| {
                 var text = Text.init(allocator, line.items);
                 errdefer text.deinit();
-                try box.children.append(Any(Widget).init(.{ .text = text }));
+                try box.children.append(.{ .any = Any(Widget).init(.{ .text = text }), .rect = null });
             }
 
             return .{
@@ -345,7 +346,7 @@ pub fn TextBox(comptime Widget: type) type {
             self.lines.deinit();
         }
 
-        pub fn build(self: *TextBox(Widget), max_size: MaxSize) !void {
+        pub fn build(self: *TextBox(Widget), max_size: MaybeSize) !void {
             self.grid = null;
             self.box.border_style = self.border_style;
             try self.box.build(max_size);
@@ -395,12 +396,12 @@ pub fn Scroll(comptime Widget: type) type {
             }
         }
 
-        pub fn build(self: *Scroll(Widget), max_size: MaxSize) !void {
+        pub fn build(self: *Scroll(Widget), max_size: MaybeSize) !void {
             if (self.grid) |*grid| {
                 grid.deinit();
                 self.grid = null;
             }
-            const child_max_size: MaxSize = switch (self.direction) {
+            const child_max_size: MaybeSize = switch (self.direction) {
                 .vert => .{ .width = max_size.width, .height = null },
                 .horiz => .{ .width = null, .height = max_size.height },
                 .both => .{ .width = null, .height = null },

@@ -19,6 +19,8 @@ const Widget = union(enum) {
     box: wgt.Box(Widget),
     text_box: wgt.TextBox(Widget),
     scroll: wgt.Scroll(Widget),
+    git_commit_list: git_wgt.GitCommitList(Widget),
+    git_diff: git_wgt.GitDiff(Widget),
     git_info: git_wgt.GitInfo(Widget),
 };
 
