@@ -293,26 +293,30 @@ pub fn GitInfo(comptime Widget: type) type {
         page: union(enum) { commit_list, diff },
 
         pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository) !GitInfo(Widget) {
-            var commit_list = try GitCommitList(Widget).init(allocator, repo);
-            errdefer commit_list.deinit();
-
-            var diff = try GitDiff(Widget).init(allocator, repo);
-            errdefer diff.deinit();
-
-            const size_fn = struct {
-                fn size(max_size: MaybeSize) MaybeSize {
-                    return .{
-                        .width = if (max_size.width) |width| width / 2 else null,
-                        .height = max_size.height,
-                    };
-                }
-            }.size;
-
-            // init box
             var box = try wgt.Box(Widget).init(allocator, null, .horiz);
             errdefer box.deinit();
-            try box.children.append(.{ .any = wgt.Any(Widget).initWithSizeFn(.{ .git_commit_list = commit_list }, size_fn), .rect = null });
-            try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_diff = diff }), .rect = null });
+
+            // add commit list
+            {
+                const size_fn = struct {
+                    fn size(max_size: MaybeSize) MaybeSize {
+                        return .{
+                            .width = if (max_size.width) |width| width / 2 else null,
+                            .height = max_size.height,
+                        };
+                    }
+                }.size;
+                var commit_list = try GitCommitList(Widget).init(allocator, repo);
+                errdefer commit_list.deinit();
+                try box.children.append(.{ .any = wgt.Any(Widget).initWithSizeFn(.{ .git_commit_list = commit_list }, size_fn), .rect = null });
+            }
+
+            // add diff
+            {
+                var diff = try GitDiff(Widget).init(allocator, repo);
+                errdefer diff.deinit();
+                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_diff = diff }), .rect = null });
+            }
 
             var git_info = GitInfo(Widget){
                 .grid = null,

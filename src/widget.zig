@@ -121,12 +121,10 @@ pub fn Box(comptime Widget: type) type {
         };
 
         pub fn init(allocator: std.mem.Allocator, border_style: ?BorderStyle, direction: Direction) !Box(Widget) {
-            var children = std.ArrayList(Child).init(allocator);
-            errdefer children.deinit();
             return .{
                 .grid = null,
                 .allocator = allocator,
-                .children = children,
+                .children = std.ArrayList(Child).init(allocator),
                 .border_style = border_style,
                 .direction = direction,
             };
@@ -375,12 +373,13 @@ pub fn Scroll(comptime Widget: type) type {
         };
 
         pub fn init(allocator: std.mem.Allocator, widget: Any(Widget), direction: Direction) !Scroll(Widget) {
-            var ptr = try allocator.create(Any(Widget));
-            ptr.* = widget;
+            var child = try allocator.create(Any(Widget));
+            errdefer allocator.destroy(child);
+            child.* = widget;
             return .{
                 .allocator = allocator,
                 .grid = null,
-                .child = ptr,
+                .child = child,
                 .x = 0,
                 .y = 0,
                 .direction = direction,
