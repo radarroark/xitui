@@ -79,24 +79,29 @@ pub fn GitCommitList(comptime Widget: type) type {
             switch (key) {
                 .arrow_up => {
                     self.commit_index -|= 1;
+                    self.updateScroll();
                 },
                 .arrow_down => {
                     if (self.commit_index + 1 < self.commits.items.len) {
                         self.commit_index += 1;
+                        self.updateScroll();
                     }
                 },
                 .home => {
                     self.commit_index = 0;
+                    self.updateScroll();
                 },
                 .end => {
                     if (self.commits.items.len > 0) {
                         self.commit_index = self.commits.items.len - 1;
+                        self.updateScroll();
                     }
                 },
                 .page_up => {
                     if (self.grid) |grid| {
                         const half_count = (grid.size.height / 3) / 2;
                         self.commit_index -|= half_count;
+                        self.updateScroll();
                     }
                 },
                 .page_down => {
@@ -104,10 +109,20 @@ pub fn GitCommitList(comptime Widget: type) type {
                         if (self.commits.items.len > 0) {
                             const half_count = (grid.size.height / 3) / 2;
                             self.commit_index = @min(self.commit_index + half_count, self.commits.items.len - 1);
+                            self.updateScroll();
                         }
                     }
                 },
                 else => {},
+            }
+        }
+
+        fn updateScroll(self: *GitCommitList(Widget)) void {
+            var left_box = &self.scroll.child.widget.box;
+            if (left_box.children.items.len > self.commit_index) {
+                if (left_box.children.items[self.commit_index].rect) |rect| {
+                    self.scroll.scrollToRect(rect);
+                }
             }
         }
     };
@@ -343,7 +358,6 @@ pub fn GitInfo(comptime Widget: type) type {
             switch (self.page) {
                 .commit_list => {
                     try self.box.children.items[0].any.input(key);
-                    self.updateScroll();
                     try self.updateDiff();
                 },
                 .diff => {
@@ -374,17 +388,6 @@ pub fn GitInfo(comptime Widget: type) type {
                     }
                 },
                 else => {},
-            }
-        }
-
-        fn updateScroll(self: *GitInfo(Widget)) void {
-            var commit_list = &self.box.children.items[0].any.widget.git_commit_list;
-            var left_scroll = &commit_list.scroll;
-            var left_box = &left_scroll.child.widget.box;
-            if (left_box.children.items.len > commit_list.commit_index) {
-                if (left_box.children.items[commit_list.commit_index].rect) |rect| {
-                    left_scroll.scrollToRect(rect);
-                }
             }
         }
 
