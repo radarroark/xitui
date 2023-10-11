@@ -47,6 +47,12 @@ pub fn Any(comptime Widget: type) type {
                 inline else => |*case| return case.grid,
             }
         }
+
+        pub fn clear(self: *Any(Widget)) void {
+            switch (self.widget) {
+                inline else => |*case| case.clear(),
+            }
+        }
     };
 }
 
@@ -71,10 +77,7 @@ pub const Text = struct {
     }
 
     pub fn build(self: *Text, max_size: MaybeSize) !void {
-        if (self.grid) |*grid| {
-            grid.deinit();
-            self.grid = null;
-        }
+        self.clear();
         const width = try std.unicode.utf8CountCodepoints(self.content);
         var grid = try grd.Grid.init(self.allocator, .{ .width = @max(1, @min(width, max_size.width orelse width)), .height = 1 });
         errdefer grid.deinit();
@@ -94,6 +97,13 @@ pub const Text = struct {
         _ = self;
         _ = key;
     }
+
+    pub fn clear(self: *Text) void {
+        if (self.grid) |*grid| {
+            grid.deinit();
+            self.grid = null;
+        }
+    }
 };
 
 pub fn Box(comptime Widget: type) type {
@@ -107,6 +117,10 @@ pub fn Box(comptime Widget: type) type {
         pub const Child = struct {
             any: Any(Widget),
             rect: ?layout.Rect,
+            visibility: ?struct {
+                min_size: MaybeSize,
+                priority: isize,
+            },
         };
 
         pub const BorderStyle = enum {
@@ -142,10 +156,8 @@ pub fn Box(comptime Widget: type) type {
         }
 
         pub fn build(self: *Box(Widget), max_size: MaybeSize) !void {
-            if (self.grid) |*grid| {
-                grid.deinit();
-                self.grid = null;
-            }
+            self.clear();
+
             const border_size: usize = if (self.border_style) |_| 1 else 0;
             if (max_size.width) |max_width| {
                 if (max_width <= border_size * 2) return;
@@ -153,39 +165,117 @@ pub fn Box(comptime Widget: type) type {
             if (max_size.height) |max_height| {
                 if (max_height <= border_size * 2) return;
             }
+
+            var sorted_children = std.AutoArrayHashMap(usize, Child).init(self.allocator);
+            defer sorted_children.deinit();
+            for (self.children.items, 0..) |child, i| {
+                try sorted_children.put(i, child);
+            }
+            const SortCtx = struct {
+                values: []Child,
+                pub fn lessThan(ctx: @This(), a_index: usize, b_index: usize) bool {
+                    const a = &ctx.values[a_index];
+                    const b = &ctx.values[b_index];
+                    if (a.visibility) |a_vis| {
+                        if (b.visibility) |b_vis| {
+                            return a_vis.priority > b_vis.priority;
+                        }
+                    } else {
+                        if (b.visibility) |_| {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+            };
+            sorted_children.sort(SortCtx{ .values = sorted_children.values() });
+
             var width: usize = 0;
             var height: usize = 0;
             var remaining_width_maybe = if (max_size.width) |max_width| max_width - (border_size * 2) else null;
             var remaining_height_maybe = if (max_size.height) |max_height| max_height - (border_size * 2) else null;
-            for (self.children.items) |*child| {
+
+            for (sorted_children.keys(), 0..) |child_index, sorted_child_index| {
+                var child = &self.children.items[child_index];
+                child.any.clear();
+
                 if (remaining_width_maybe) |remaining_width| {
-                    if (remaining_width <= 0) break;
+                    if (remaining_width <= 0) continue;
+                    if (child.visibility) |vis| {
+                        if (vis.min_size.width) |min_width| {
+                            if (remaining_width < min_width) continue;
+                        }
+                    }
                 }
                 if (remaining_height_maybe) |remaining_height| {
-                    if (remaining_height <= 0) break;
+                    if (remaining_height <= 0) continue;
+                    if (child.visibility) |vis| {
+                        if (vis.min_size.height) |min_height| {
+                            if (remaining_height < min_height) continue;
+                        }
+                    }
                 }
-                try child.any.build(.{ .width = remaining_width_maybe, .height = remaining_height_maybe });
+
+                // make room for the next children if they have min sizes
+                var expected_remaining_width_maybe = remaining_width_maybe;
+                var expected_remaining_height_maybe = remaining_height_maybe;
+                if (child.visibility) |vis| {
+                    if (expected_remaining_width_maybe) |*expected_remaining_width| {
+                        if (vis.min_size.width) |min_width| {
+                            for (sorted_child_index + 1..sorted_children.count()) |next_sorted_child_index| {
+                                const next_child_index = sorted_children.keys()[next_sorted_child_index];
+                                const next_child = &self.children.items[next_child_index];
+                                if (next_child.visibility) |next_vis| {
+                                    if (next_vis.min_size.width) |next_min_width| {
+                                        if (expected_remaining_width.* >= min_width + next_min_width) {
+                                            expected_remaining_width.* -= next_min_width;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (expected_remaining_height_maybe) |*expected_remaining_height| {
+                        if (vis.min_size.height) |min_height| {
+                            for (sorted_child_index + 1..sorted_children.count()) |next_sorted_child_index| {
+                                const next_child_index = sorted_children.keys()[next_sorted_child_index];
+                                const next_child = &self.children.items[next_child_index];
+                                if (next_child.visibility) |next_vis| {
+                                    if (next_vis.min_size.height) |next_min_height| {
+                                        if (expected_remaining_height.* >= min_height + next_min_height) {
+                                            expected_remaining_height.* -= next_min_height;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                try child.any.build(.{ .width = expected_remaining_width_maybe, .height = expected_remaining_height_maybe });
+
                 if (child.any.grid()) |child_grid| {
                     switch (self.direction) {
                         .vert => {
-                            if (remaining_height_maybe) |*remaining_height| remaining_height.* -= child_grid.size.height;
+                            if (remaining_height_maybe) |*remaining_height| remaining_height.* -|= child_grid.size.height;
                             width = @max(width, child_grid.size.width);
                             height += child_grid.size.height;
                         },
                         .horiz => {
-                            if (remaining_width_maybe) |*remaining_width| remaining_width.* -= child_grid.size.width;
+                            if (remaining_width_maybe) |*remaining_width| remaining_width.* -|= child_grid.size.width;
                             width += child_grid.size.width;
                             height = @max(height, child_grid.size.height);
                         },
                     }
-                } else {
-                    break;
                 }
             }
+
             width += border_size * 2;
             height += border_size * 2;
+
             var grid = try grd.Grid.init(self.allocator, .{ .width = width, .height = height });
             errdefer grid.deinit();
+
             switch (self.direction) {
                 .vert => {
                     var line: usize = 0;
@@ -226,6 +316,7 @@ pub fn Box(comptime Widget: type) type {
                     }
                 },
             }
+
             // border style
             if (self.border_style) |border_style| {
                 const horiz_line = switch (border_style) {
@@ -274,6 +365,7 @@ pub fn Box(comptime Widget: type) type {
                 grid.cells.items[try grid.cells.at(.{ grid.size.height - 1, 0 })].rune = bottom_left_corner;
                 grid.cells.items[try grid.cells.at(.{ grid.size.height - 1, grid.size.width - 1 })].rune = bottom_right_corner;
             }
+
             // set grid
             self.grid = grid;
         }
@@ -281,6 +373,13 @@ pub fn Box(comptime Widget: type) type {
         pub fn input(self: *Box(Widget), key: inp.Key) !void {
             for (self.children.items) |*child| {
                 try child.any.input(key);
+            }
+        }
+
+        pub fn clear(self: *Box(Widget)) void {
+            if (self.grid) |*grid| {
+                grid.deinit();
+                self.grid = null;
             }
         }
     };
@@ -324,7 +423,7 @@ pub fn TextBox(comptime Widget: type) type {
             for (lines.items) |line| {
                 var text = Text.init(allocator, line.items);
                 errdefer text.deinit();
-                try box.children.append(.{ .any = Any(Widget).init(.{ .text = text }), .rect = null });
+                try box.children.append(.{ .any = Any(Widget).init(.{ .text = text }), .rect = null, .visibility = null });
             }
 
             return .{
@@ -345,7 +444,7 @@ pub fn TextBox(comptime Widget: type) type {
         }
 
         pub fn build(self: *TextBox(Widget), max_size: MaybeSize) !void {
-            self.grid = null;
+            self.clear();
             self.box.border_style = self.border_style;
             try self.box.build(max_size);
             self.grid = self.box.grid;
@@ -353,6 +452,10 @@ pub fn TextBox(comptime Widget: type) type {
 
         pub fn input(self: *TextBox(Widget), key: inp.Key) !void {
             try self.box.input(key);
+        }
+
+        pub fn clear(self: *TextBox(Widget)) void {
+            self.grid = null;
         }
     };
 }
@@ -396,10 +499,7 @@ pub fn Scroll(comptime Widget: type) type {
         }
 
         pub fn build(self: *Scroll(Widget), max_size: MaybeSize) !void {
-            if (self.grid) |*grid| {
-                grid.deinit();
-                self.grid = null;
-            }
+            self.clear();
             const child_max_size: MaybeSize = switch (self.direction) {
                 .vert => .{ .width = max_size.width, .height = null },
                 .horiz => .{ .width = null, .height = max_size.height },
@@ -416,6 +516,13 @@ pub fn Scroll(comptime Widget: type) type {
 
         pub fn input(self: *Scroll(Widget), key: inp.Key) !void {
             try self.child.input(key);
+        }
+
+        pub fn clear(self: *Scroll(Widget)) void {
+            if (self.grid) |*grid| {
+                grid.deinit();
+                self.grid = null;
+            }
         }
 
         pub fn scrollToRect(self: *Scroll(Widget), rect: layout.Rect) void {

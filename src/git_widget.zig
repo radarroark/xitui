@@ -45,7 +45,7 @@ pub fn GitCommitList(comptime Widget: type) type {
                 const line = std.mem.sliceTo(c.git_commit_message(commit), '\n');
                 var text_box = try wgt.TextBox(Widget).init(allocator, line, .single);
                 errdefer text_box.deinit();
-                try inner_box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null });
+                try inner_box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null, .visibility = null });
             }
 
             // init scroll
@@ -71,6 +71,7 @@ pub fn GitCommitList(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitCommitList(Widget), max_size: MaybeSize) !void {
+            self.clear();
             try self.scroll.build(max_size);
             self.grid = self.scroll.grid;
         }
@@ -117,6 +118,10 @@ pub fn GitCommitList(comptime Widget: type) type {
             }
         }
 
+        pub fn clear(self: *GitCommitList(Widget)) void {
+            self.grid = null;
+        }
+
         fn updateScroll(self: *GitCommitList(Widget)) void {
             var left_box = &self.scroll.child.widget.box;
             if (left_box.children.items.len > self.commit_index) {
@@ -145,7 +150,7 @@ pub fn GitDiff(comptime Widget: type) type {
 
             var outer_box = try wgt.Box(Widget).init(allocator, null, .vert);
             errdefer outer_box.deinit();
-            try outer_box.children.append(.{ .any = wgt.Any(Widget).init(.{ .scroll = scroll }), .rect = null });
+            try outer_box.children.append(.{ .any = wgt.Any(Widget).init(.{ .scroll = scroll }), .rect = null, .visibility = null });
 
             return .{
                 .grid = null,
@@ -165,6 +170,7 @@ pub fn GitDiff(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitDiff(Widget), max_size: MaybeSize) !void {
+            self.clear();
             try self.box.build(max_size);
             self.grid = self.box.grid;
         }
@@ -244,6 +250,10 @@ pub fn GitDiff(comptime Widget: type) type {
             }
         }
 
+        pub fn clear(self: *GitDiff(Widget)) void {
+            self.grid = null;
+        }
+
         pub fn updateDiff(self: *GitDiff(Widget), commit_diff: ?*c.git_diff) !void {
             for (self.bufs.items) |*buf| {
                 c.git_buf_dispose(buf);
@@ -274,7 +284,7 @@ pub fn GitDiff(comptime Widget: type) type {
             for (self.bufs.items) |buf| {
                 var text_box = try wgt.TextBox(Widget).init(self.allocator, std.mem.sliceTo(buf.ptr, 0), .hidden);
                 errdefer text_box.deinit();
-                try self.box.children.items[0].any.widget.scroll.child.widget.box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null });
+                try self.box.children.items[0].any.widget.scroll.child.widget.box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null, .visibility = null });
             }
 
             // reset scroll position
@@ -298,24 +308,16 @@ pub fn GitInfo(comptime Widget: type) type {
 
             // add commit list
             {
-                const size_fn = struct {
-                    fn size(max_size: MaybeSize) MaybeSize {
-                        return .{
-                            .width = if (max_size.width) |width| width / 2 else null,
-                            .height = max_size.height,
-                        };
-                    }
-                }.size;
                 var commit_list = try GitCommitList(Widget).init(allocator, repo);
                 errdefer commit_list.deinit();
-                try box.children.append(.{ .any = wgt.Any(Widget).initWithSizeFn(.{ .git_commit_list = commit_list }, size_fn), .rect = null });
+                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_commit_list = commit_list }), .rect = null, .visibility = .{ .min_size = .{ .width = 30, .height = null }, .priority = 1 } });
             }
 
             // add diff
             {
                 var diff = try GitDiff(Widget).init(allocator, repo);
                 errdefer diff.deinit();
-                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_diff = diff }), .rect = null });
+                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_diff = diff }), .rect = null, .visibility = .{ .min_size = .{ .width = 60, .height = null }, .priority = 0 } });
             }
 
             var git_info = GitInfo(Widget){
@@ -335,6 +337,8 @@ pub fn GitInfo(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitInfo(Widget), max_size: MaybeSize) !void {
+            self.clear();
+
             switch (self.page) {
                 .commit_list => {
                     var commit_list = &self.box.children.items[0].any.widget.git_commit_list;
@@ -376,6 +380,7 @@ pub fn GitInfo(comptime Widget: type) type {
                             switch (self.page) {
                                 .commit_list => {
                                     self.page = .diff;
+                                    self.updatePriority();
                                 },
                                 .diff => {},
                             }
@@ -385,6 +390,7 @@ pub fn GitInfo(comptime Widget: type) type {
                                 .commit_list => {},
                                 .diff => {
                                     self.page = .commit_list;
+                                    self.updatePriority();
                                 },
                             }
                         },
@@ -393,6 +399,10 @@ pub fn GitInfo(comptime Widget: type) type {
                 },
                 else => {},
             }
+        }
+
+        pub fn clear(self: *GitInfo(Widget)) void {
+            self.grid = null;
         }
 
         fn updateDiff(self: *GitInfo(Widget)) !void {
@@ -420,6 +430,15 @@ pub fn GitInfo(comptime Widget: type) type {
 
             var diff = &self.box.children.items[1].any.widget.git_diff;
             try diff.updateDiff(commit_diff);
+        }
+
+        fn updatePriority(self: *GitInfo(Widget)) void {
+            const page_index = @intFromEnum(self.page);
+            for (self.box.children.items, 0..) |*child, i| {
+                if (child.visibility) |*vis| {
+                    vis.priority = if (i < page_index) 1 else if (i == page_index) 2 else 0;
+                }
+            }
         }
     };
 }
