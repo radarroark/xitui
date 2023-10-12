@@ -436,7 +436,8 @@ pub fn GitInfo(comptime Widget: type) type {
             const page_index = @intFromEnum(self.page);
             for (self.box.children.items, 0..) |*child, i| {
                 if (child.visibility) |*vis| {
-                    vis.priority = if (i < page_index) 1 else if (i == page_index) 2 else 0;
+                    const ii: isize = @intCast(i);
+                    vis.priority = if (ii <= page_index) ii else -ii;
                 }
             }
         }
