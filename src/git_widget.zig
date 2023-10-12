@@ -363,6 +363,8 @@ pub fn GitInfo(comptime Widget: type) type {
         }
 
         pub fn input(self: *GitInfo(Widget), key: inp.Key) !void {
+            const diff_scroll_x = self.box.children.items[1].any.widget.git_diff.box.children.items[0].any.widget.scroll.x;
+
             switch (self.page) {
                 .commit_list => {
                     try self.box.children.items[0].any.input(key);
@@ -374,6 +376,26 @@ pub fn GitInfo(comptime Widget: type) type {
             }
 
             switch (key) {
+                .arrow_left => {
+                    switch (self.page) {
+                        .commit_list => {},
+                        .diff => {
+                            if (diff_scroll_x == 0) {
+                                self.page = .commit_list;
+                                self.updatePriority();
+                            }
+                        },
+                    }
+                },
+                .arrow_right => {
+                    switch (self.page) {
+                        .commit_list => {
+                            self.page = .diff;
+                            self.updatePriority();
+                        },
+                        .diff => {},
+                    }
+                },
                 .codepoint => {
                     switch (key.codepoint) {
                         13 => {
