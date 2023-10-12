@@ -21,7 +21,7 @@ const Widget = union(enum) {
     scroll: wgt.Scroll(Widget),
     git_commit_list: git_wgt.GitCommitList(Widget),
     git_diff: git_wgt.GitDiff(Widget),
-    git_info: git_wgt.GitInfo(Widget),
+    git_log: git_wgt.GitLog(Widget),
 };
 
 var root: wgt.Any(Widget) = undefined;
@@ -120,7 +120,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    root = wgt.Any(Widget).init(.{ .git_info = try git_wgt.GitInfo(Widget).init(allocator, repo) });
+    root = wgt.Any(Widget).init(.{ .git_log = try git_wgt.GitLog(Widget).init(allocator, repo) });
     defer root.deinit();
 
     // init term

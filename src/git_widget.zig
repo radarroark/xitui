@@ -294,7 +294,7 @@ pub fn GitDiff(comptime Widget: type) type {
     };
 }
 
-pub fn GitInfo(comptime Widget: type) type {
+pub fn GitLog(comptime Widget: type) type {
     return struct {
         grid: ?grd.Grid,
         box: wgt.Box(Widget),
@@ -302,7 +302,7 @@ pub fn GitInfo(comptime Widget: type) type {
         repo: ?*c.git_repository,
         page: union(enum) { commit_list, diff },
 
-        pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository) !GitInfo(Widget) {
+        pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository) !GitLog(Widget) {
             var box = try wgt.Box(Widget).init(allocator, null, .horiz);
             errdefer box.deinit();
 
@@ -320,23 +320,23 @@ pub fn GitInfo(comptime Widget: type) type {
                 try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_diff = diff }), .rect = null, .visibility = .{ .min_size = .{ .width = 60, .height = null }, .priority = 0 } });
             }
 
-            var git_info = GitInfo(Widget){
+            var git_log = GitLog(Widget){
                 .grid = null,
                 .box = box,
                 .allocator = allocator,
                 .repo = repo,
                 .page = .commit_list,
             };
-            try git_info.updateDiff();
+            try git_log.updateDiff();
 
-            return git_info;
+            return git_log;
         }
 
-        pub fn deinit(self: *GitInfo(Widget)) void {
+        pub fn deinit(self: *GitLog(Widget)) void {
             self.box.deinit();
         }
 
-        pub fn build(self: *GitInfo(Widget), max_size: MaybeSize) !void {
+        pub fn build(self: *GitLog(Widget), max_size: MaybeSize) !void {
             self.clear();
 
             switch (self.page) {
@@ -362,7 +362,7 @@ pub fn GitInfo(comptime Widget: type) type {
             self.grid = self.box.grid;
         }
 
-        pub fn input(self: *GitInfo(Widget), key: inp.Key) !void {
+        pub fn input(self: *GitLog(Widget), key: inp.Key) !void {
             const diff_scroll_x = self.box.children.items[1].any.widget.git_diff.box.children.items[0].any.widget.scroll.x;
 
             switch (self.page) {
@@ -423,11 +423,11 @@ pub fn GitInfo(comptime Widget: type) type {
             }
         }
 
-        pub fn clear(self: *GitInfo(Widget)) void {
+        pub fn clear(self: *GitLog(Widget)) void {
             self.grid = null;
         }
 
-        fn updateDiff(self: *GitInfo(Widget)) !void {
+        fn updateDiff(self: *GitLog(Widget)) !void {
             const commit_list = &self.box.children.items[0].any.widget.git_commit_list;
 
             const commit = commit_list.commits.items[commit_list.commit_index];
@@ -454,7 +454,7 @@ pub fn GitInfo(comptime Widget: type) type {
             try diff.updateDiff(commit_diff);
         }
 
-        fn updatePriority(self: *GitInfo(Widget)) void {
+        fn updatePriority(self: *GitLog(Widget)) void {
             const page_index = @intFromEnum(self.page);
             for (self.box.children.items, 0..) |*child, i| {
                 if (child.visibility) |*vis| {
