@@ -13,14 +13,20 @@ pub const Key = union(enum) {
     codepoint: u21,
 
     pub fn init(codepoint: u21, next_byte_maybe: ?u8, esc: *std.ArrayList(u8)) !?Key {
-        // if we are in an esc sequence
-        if (esc.items.len > 0) {
+        const esc_len = esc.items.len;
+
+        // sanity check
+        if (esc_len == esc.capacity) {
+            return error.EscCodeAtCapacity;
+        }
+        // we are in an esc sequence
+        else if (esc_len > 0) {
             // esc sequences should be ascii-only
             const byte: u8 = std.math.cast(u8, codepoint) orelse return null;
 
             // the character after esc is part of the sequence and doesn't need to be looked at
-            if (esc.items.len == 1) {
-                try esc.append(byte);
+            if (esc_len == 1) {
+                esc.appendAssumeCapacity(byte);
                 return null;
             }
 
@@ -49,14 +55,14 @@ pub const Key = union(enum) {
                         },
                         else => .unknown,
                     };
-                    esc.clearAndFree();
+                    esc.clearRetainingCapacity();
                     return key;
                 },
                 // add all other chars to the esc sequence
-                else => try esc.append(byte),
+                else => esc.appendAssumeCapacity(byte),
             }
         }
-        // not in an esc sequence
+        // we are not in an esc sequence
         else {
             switch (codepoint) {
                 'q' => return error.TerminalQuit,
@@ -64,7 +70,7 @@ pub const Key = union(enum) {
                     if (next_byte_maybe) |next_byte| {
                         // sequence must start with [
                         if (next_byte == '[') {
-                            try esc.append('\x1B');
+                            esc.appendAssumeCapacity('\x1B');
                             return null;
                         }
                     }

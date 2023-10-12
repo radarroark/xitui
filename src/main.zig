@@ -83,9 +83,10 @@ fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *S
         }
     }
 
-    var buffer: [32]u8 = undefined;
+    const buffer_size = 32;
+    var buffer: [buffer_size]u8 = undefined;
     const size = try term.terminal.tty.read(&buffer);
-    var esc = std.ArrayList(u8).init(allocator);
+    var esc = try std.ArrayList(u8).initCapacity(allocator, buffer_size);
     defer esc.deinit();
 
     if (size > 0) {
