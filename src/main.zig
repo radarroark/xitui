@@ -92,7 +92,8 @@ fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *S
         const text = std.unicode.Utf8View.init(buffer[0..size]) catch return;
         var iter = text.iterator();
         while (iter.nextCodepoint()) |codepoint| {
-            if (try inp.Key.init(codepoint, &esc)) |key| {
+            const next_bytes = iter.peek(1);
+            if (try inp.Key.init(codepoint, if (next_bytes.len == 1) next_bytes[0] else null, &esc)) |key| {
                 try root.input(key);
             }
         }

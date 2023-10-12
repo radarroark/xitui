@@ -12,19 +12,15 @@ pub const Key = union(enum) {
     page_down,
     codepoint: u21,
 
-    pub fn init(codepoint: u21, esc: *std.ArrayList(u8)) !?Key {
+    pub fn init(codepoint: u21, next_byte_maybe: ?u8, esc: *std.ArrayList(u8)) !?Key {
         // if we are in an esc sequence
         if (esc.items.len > 0) {
             // esc sequences should be ascii-only
             const byte: u8 = std.math.cast(u8, codepoint) orelse return null;
 
-            // sequence must start with [
+            // the character after esc is part of the sequence and doesn't need to be looked at
             if (esc.items.len == 1) {
-                if (byte == '[') {
-                    try esc.append(byte);
-                } else {
-                    esc.clearAndFree();
-                }
+                try esc.append(byte);
                 return null;
             }
 
@@ -64,9 +60,18 @@ pub const Key = union(enum) {
         else {
             switch (codepoint) {
                 'q' => return error.TerminalQuit,
-                '\x1B' => try esc.append('\x1B'),
-                else => return .{ .codepoint = codepoint },
+                '\x1B' => {
+                    if (next_byte_maybe) |next_byte| {
+                        // sequence must start with [
+                        if (next_byte == '[') {
+                            try esc.append('\x1B');
+                            return null;
+                        }
+                    }
+                },
+                else => {},
             }
+            return .{ .codepoint = codepoint };
         }
         return null;
     }

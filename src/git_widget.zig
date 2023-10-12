@@ -407,7 +407,7 @@ pub fn GitInfo(comptime Widget: type) type {
                                 .diff => {},
                             }
                         },
-                        127 => {
+                        127, '\x1B' => {
                             switch (self.page) {
                                 .commit_list => {},
                                 .diff => {
