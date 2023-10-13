@@ -180,12 +180,8 @@ pub fn Box(comptime Widget: type) type {
                         if (b.visibility) |b_vis| {
                             return a_vis.priority > b_vis.priority;
                         }
-                    } else {
-                        if (b.visibility) |_| {
-                            return false;
-                        }
                     }
-                    return true;
+                    return false;
                 }
             };
             sorted_children.sort(SortCtx{ .values = sorted_children.values() });
