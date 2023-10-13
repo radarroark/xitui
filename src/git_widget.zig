@@ -12,11 +12,11 @@ const c = @cImport({
 pub fn GitCommitList(comptime Widget: type) type {
     return struct {
         grid: ?grd.Grid,
-        allocator: std.mem.Allocator,
+        scroll: wgt.Scroll(Widget),
         repo: ?*c.git_repository,
         commits: std.ArrayList(?*c.git_commit),
-        commit_index: usize = 0,
-        scroll: wgt.Scroll(Widget),
+        selected: usize = 0,
+        focused: bool,
 
         pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository) !GitCommitList(Widget) {
             // init walker
@@ -43,7 +43,7 @@ pub fn GitCommitList(comptime Widget: type) type {
             errdefer inner_box.deinit();
             for (commits.items) |commit| {
                 const line = std.mem.sliceTo(c.git_commit_message(commit), '\n');
-                var text_box = try wgt.TextBox(Widget).init(allocator, line, .single);
+                var text_box = try wgt.TextBox(Widget).init(allocator, line, .hidden);
                 errdefer text_box.deinit();
                 try inner_box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null, .visibility = null });
             }
@@ -54,11 +54,11 @@ pub fn GitCommitList(comptime Widget: type) type {
 
             return .{
                 .grid = null,
-                .allocator = allocator,
+                .scroll = scroll,
                 .repo = repo,
                 .commits = commits,
-                .commit_index = 0,
-                .scroll = scroll,
+                .selected = 0,
+                .focused = false,
             };
         }
 
@@ -79,29 +79,29 @@ pub fn GitCommitList(comptime Widget: type) type {
         pub fn input(self: *GitCommitList(Widget), key: inp.Key) !void {
             switch (key) {
                 .arrow_up => {
-                    self.commit_index -|= 1;
+                    self.selected -|= 1;
                     self.updateScroll();
                 },
                 .arrow_down => {
-                    if (self.commit_index + 1 < self.commits.items.len) {
-                        self.commit_index += 1;
+                    if (self.selected + 1 < self.commits.items.len) {
+                        self.selected += 1;
                         self.updateScroll();
                     }
                 },
                 .home => {
-                    self.commit_index = 0;
+                    self.selected = 0;
                     self.updateScroll();
                 },
                 .end => {
                     if (self.commits.items.len > 0) {
-                        self.commit_index = self.commits.items.len - 1;
+                        self.selected = self.commits.items.len - 1;
                         self.updateScroll();
                     }
                 },
                 .page_up => {
                     if (self.grid) |grid| {
                         const half_count = (grid.size.height / 3) / 2;
-                        self.commit_index -|= half_count;
+                        self.selected -|= half_count;
                         self.updateScroll();
                     }
                 },
@@ -109,23 +109,34 @@ pub fn GitCommitList(comptime Widget: type) type {
                     if (self.grid) |grid| {
                         if (self.commits.items.len > 0) {
                             const half_count = (grid.size.height / 3) / 2;
-                            self.commit_index = @min(self.commit_index + half_count, self.commits.items.len - 1);
+                            self.selected = @min(self.selected + half_count, self.commits.items.len - 1);
                             self.updateScroll();
                         }
                     }
                 },
                 else => {},
             }
+
+            self.refresh();
         }
 
         pub fn clear(self: *GitCommitList(Widget)) void {
             self.grid = null;
         }
 
+        pub fn refresh(self: *GitCommitList(Widget)) void {
+            for (self.scroll.child.widget.box.children.items, 0..) |*commit, i| {
+                commit.any.widget.text_box.border_style = if (self.selected == i)
+                    (if (self.focused) .double else .single)
+                else
+                    .hidden;
+            }
+        }
+
         fn updateScroll(self: *GitCommitList(Widget)) void {
             var left_box = &self.scroll.child.widget.box;
-            if (left_box.children.items.len > self.commit_index) {
-                if (left_box.children.items[self.commit_index].rect) |rect| {
+            if (left_box.children.items.len > self.selected) {
+                if (left_box.children.items[self.selected].rect) |rect| {
                     self.scroll.scrollToRect(rect);
                 }
             }
@@ -140,6 +151,7 @@ pub fn GitDiff(comptime Widget: type) type {
         allocator: std.mem.Allocator,
         repo: ?*c.git_repository,
         bufs: std.ArrayList(c.git_buf),
+        focused: bool,
 
         pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository) !GitDiff(Widget) {
             var inner_box = try wgt.Box(Widget).init(allocator, null, .vert);
@@ -158,6 +170,7 @@ pub fn GitDiff(comptime Widget: type) type {
                 .allocator = allocator,
                 .repo = repo,
                 .bufs = std.ArrayList(c.git_buf).init(allocator),
+                .focused = false,
             };
         }
 
@@ -254,6 +267,10 @@ pub fn GitDiff(comptime Widget: type) type {
             self.grid = null;
         }
 
+        pub fn refresh(self: *GitDiff(Widget)) void {
+            self.box.border_style = if (self.focused) .double else .hidden;
+        }
+
         pub fn updateDiff(self: *GitDiff(Widget), commit_diff: ?*c.git_diff) !void {
             for (self.bufs.items) |*buf| {
                 c.git_buf_dispose(buf);
@@ -298,9 +315,9 @@ pub fn GitLog(comptime Widget: type) type {
     return struct {
         grid: ?grd.Grid,
         box: wgt.Box(Widget),
-        allocator: std.mem.Allocator,
         repo: ?*c.git_repository,
-        page: union(enum) { commit_list, diff },
+        selected: union(enum) { commit_list, diff },
+        focused: bool,
 
         pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository) !GitLog(Widget) {
             var box = try wgt.Box(Widget).init(allocator, null, .horiz);
@@ -323,9 +340,9 @@ pub fn GitLog(comptime Widget: type) type {
             var git_log = GitLog(Widget){
                 .grid = null,
                 .box = box,
-                .allocator = allocator,
                 .repo = repo,
-                .page = .commit_list,
+                .selected = .commit_list,
+                .focused = false,
             };
             try git_log.updateDiff();
 
@@ -338,26 +355,6 @@ pub fn GitLog(comptime Widget: type) type {
 
         pub fn build(self: *GitLog(Widget), max_size: MaybeSize) !void {
             self.clear();
-
-            switch (self.page) {
-                .commit_list => {
-                    var commit_list = &self.box.children.items[0].any.widget.git_commit_list;
-                    for (commit_list.scroll.child.widget.box.children.items, 0..) |*commit, i| {
-                        commit.any.widget.text_box.border_style = if (commit_list.commit_index == i) .double else .hidden;
-                    }
-                    var diff = &self.box.children.items[1].any.widget.git_diff;
-                    diff.box.border_style = .hidden;
-                },
-                .diff => {
-                    var commit_list = &self.box.children.items[0].any.widget.git_commit_list;
-                    for (commit_list.scroll.child.widget.box.children.items, 0..) |*commit, i| {
-                        commit.any.widget.text_box.border_style = if (commit_list.commit_index == i) .single else .hidden;
-                    }
-                    var diff = &self.box.children.items[1].any.widget.git_diff;
-                    diff.box.border_style = .double;
-                },
-            }
-
             try self.box.build(max_size);
             self.grid = self.box.grid;
         }
@@ -365,7 +362,7 @@ pub fn GitLog(comptime Widget: type) type {
         pub fn input(self: *GitLog(Widget), key: inp.Key) !void {
             const diff_scroll_x = self.box.children.items[1].any.widget.git_diff.box.children.items[0].any.widget.scroll.x;
 
-            switch (self.page) {
+            switch (self.selected) {
                 .commit_list => {
                     try self.box.children.items[0].any.input(key);
                     try self.updateDiff();
@@ -377,20 +374,20 @@ pub fn GitLog(comptime Widget: type) type {
 
             switch (key) {
                 .arrow_left => {
-                    switch (self.page) {
+                    switch (self.selected) {
                         .commit_list => {},
                         .diff => {
                             if (diff_scroll_x == 0) {
-                                self.page = .commit_list;
+                                self.selected = .commit_list;
                                 self.updatePriority();
                             }
                         },
                     }
                 },
                 .arrow_right => {
-                    switch (self.page) {
+                    switch (self.selected) {
                         .commit_list => {
-                            self.page = .diff;
+                            self.selected = .diff;
                             self.updatePriority();
                         },
                         .diff => {},
@@ -399,19 +396,19 @@ pub fn GitLog(comptime Widget: type) type {
                 .codepoint => {
                     switch (key.codepoint) {
                         13 => {
-                            switch (self.page) {
+                            switch (self.selected) {
                                 .commit_list => {
-                                    self.page = .diff;
+                                    self.selected = .diff;
                                     self.updatePriority();
                                 },
                                 .diff => {},
                             }
                         },
                         127, '\x1B' => {
-                            switch (self.page) {
+                            switch (self.selected) {
                                 .commit_list => {},
                                 .diff => {
-                                    self.page = .commit_list;
+                                    self.selected = .commit_list;
                                     self.updatePriority();
                                 },
                             }
@@ -421,16 +418,39 @@ pub fn GitLog(comptime Widget: type) type {
                 },
                 else => {},
             }
+
+            self.refresh();
         }
 
         pub fn clear(self: *GitLog(Widget)) void {
             self.grid = null;
         }
 
+        pub fn refresh(self: *GitLog(Widget)) void {
+            switch (self.selected) {
+                .commit_list => {
+                    var commit_list = &self.box.children.items[0].any.widget.git_commit_list;
+                    commit_list.focused = self.focused;
+                    commit_list.refresh();
+                    var diff = &self.box.children.items[1].any.widget.git_diff;
+                    diff.focused = false;
+                    diff.refresh();
+                },
+                .diff => {
+                    var commit_list = &self.box.children.items[0].any.widget.git_commit_list;
+                    commit_list.focused = false;
+                    commit_list.refresh();
+                    var diff = &self.box.children.items[1].any.widget.git_diff;
+                    diff.focused = self.focused;
+                    diff.refresh();
+                },
+            }
+        }
+
         fn updateDiff(self: *GitLog(Widget)) !void {
             const commit_list = &self.box.children.items[0].any.widget.git_commit_list;
 
-            const commit = commit_list.commits.items[commit_list.commit_index];
+            const commit = commit_list.commits.items[commit_list.selected];
 
             const commit_oid = c.git_commit_tree_id(commit);
             var commit_tree: ?*c.git_tree = null;
@@ -439,8 +459,8 @@ pub fn GitLog(comptime Widget: type) type {
 
             var prev_commit_tree: ?*c.git_tree = null;
 
-            if (commit_list.commit_index < commit_list.commits.items.len - 1) {
-                const prev_commit = commit_list.commits.items[commit_list.commit_index + 1];
+            if (commit_list.selected < commit_list.commits.items.len - 1) {
+                const prev_commit = commit_list.commits.items[commit_list.selected + 1];
                 const prev_commit_oid = c.git_commit_tree_id(prev_commit);
                 std.debug.assert(0 == c.git_tree_lookup(&prev_commit_tree, self.repo, prev_commit_oid));
             }
@@ -455,13 +475,317 @@ pub fn GitLog(comptime Widget: type) type {
         }
 
         fn updatePriority(self: *GitLog(Widget)) void {
-            const page_index = @intFromEnum(self.page);
+            const selected_index = @intFromEnum(self.selected);
             for (self.box.children.items, 0..) |*child, i| {
                 if (child.visibility) |*vis| {
                     const ii: isize = @intCast(i);
-                    vis.priority = if (ii <= page_index) ii else -ii;
+                    vis.priority = if (ii <= selected_index) ii else -ii;
                 }
             }
+        }
+    };
+}
+
+pub fn GitStatus(comptime Widget: type) type {
+    return struct {
+        grid: ?grd.Grid,
+        box: wgt.Box(Widget),
+        selected: usize,
+        focused: bool,
+
+        pub fn init(allocator: std.mem.Allocator) !GitStatus(Widget) {
+            var box = try wgt.Box(Widget).init(allocator, null, .vert);
+            errdefer box.deinit();
+
+            {
+                var text_box = try wgt.TextBox(Widget).init(allocator, "hello world", .single);
+                errdefer text_box.deinit();
+                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null, .visibility = null });
+            }
+
+            return .{
+                .grid = null,
+                .box = box,
+                .selected = 0,
+                .focused = false,
+            };
+        }
+
+        pub fn deinit(self: *GitStatus(Widget)) void {
+            self.box.deinit();
+        }
+
+        pub fn build(self: *GitStatus(Widget), max_size: MaybeSize) !void {
+            self.clear();
+            try self.box.build(max_size);
+            self.grid = self.box.grid;
+        }
+
+        pub fn input(self: *GitStatus(Widget), key: inp.Key) !void {
+            _ = self;
+            _ = key;
+        }
+
+        pub fn clear(self: *GitStatus(Widget)) void {
+            self.grid = null;
+        }
+
+        pub fn refresh(self: *GitStatus(Widget)) void {
+            for (self.box.children.items, 0..) |*child, i| {
+                child.any.widget.text_box.border_style = if (self.selected == i)
+                    (if (self.focused) .double else .single)
+                else
+                    .hidden;
+            }
+        }
+    };
+}
+
+pub fn GitUITabs(comptime Widget: type) type {
+    return struct {
+        grid: ?grd.Grid,
+        box: wgt.Box(Widget),
+        selected: usize,
+        focused: bool,
+
+        pub fn init(allocator: std.mem.Allocator) !GitUITabs(Widget) {
+            var box = try wgt.Box(Widget).init(allocator, null, .horiz);
+            errdefer box.deinit();
+
+            {
+                var text_box = try wgt.TextBox(Widget).init(allocator, "log", .single);
+                errdefer text_box.deinit();
+                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null, .visibility = null });
+            }
+
+            {
+                var text_box = try wgt.TextBox(Widget).init(allocator, "status", .hidden);
+                errdefer text_box.deinit();
+                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null, .visibility = null });
+            }
+
+            return .{
+                .grid = null,
+                .box = box,
+                .selected = 0,
+                .focused = false,
+            };
+        }
+
+        pub fn deinit(self: *GitUITabs(Widget)) void {
+            self.box.deinit();
+        }
+
+        pub fn build(self: *GitUITabs(Widget), max_size: MaybeSize) !void {
+            self.clear();
+            try self.box.build(max_size);
+            self.grid = self.box.grid;
+        }
+
+        pub fn input(self: *GitUITabs(Widget), key: inp.Key) !void {
+            switch (key) {
+                .arrow_left => {
+                    self.selected -|= 1;
+                },
+                .arrow_right => {
+                    if (self.selected + 1 < self.box.children.items.len) {
+                        self.selected += 1;
+                    }
+                },
+                else => {},
+            }
+        }
+
+        pub fn clear(self: *GitUITabs(Widget)) void {
+            self.grid = null;
+        }
+
+        pub fn refresh(self: *GitUITabs(Widget)) void {
+            for (self.box.children.items, 0..) |*tab, i| {
+                tab.any.widget.text_box.border_style = if (self.selected == i)
+                    (if (self.focused) .double else .single)
+                else
+                    .hidden;
+            }
+        }
+    };
+}
+
+pub fn GitUIStack(comptime Widget: type) type {
+    return struct {
+        grid: ?grd.Grid,
+        children: std.ArrayList(wgt.Any(Widget)),
+        selected: usize,
+        focused: bool,
+
+        pub fn init(allocator: std.mem.Allocator) GitUIStack(Widget) {
+            return .{
+                .grid = null,
+                .children = std.ArrayList(wgt.Any(Widget)).init(allocator),
+                .selected = 0,
+                .focused = false,
+            };
+        }
+
+        pub fn deinit(self: *GitUIStack(Widget)) void {
+            for (self.children.items) |*child| {
+                child.deinit();
+            }
+            self.children.deinit();
+        }
+
+        pub fn build(self: *GitUIStack(Widget), max_size: MaybeSize) !void {
+            self.clear();
+            var widget = &self.children.items[self.selected];
+            try widget.build(max_size);
+            self.grid = widget.grid();
+        }
+
+        pub fn input(self: *GitUIStack(Widget), key: inp.Key) !void {
+            try self.children.items[self.selected].input(key);
+        }
+
+        pub fn clear(self: *GitUIStack(Widget)) void {
+            self.grid = null;
+        }
+
+        pub fn refresh(self: *GitUIStack(Widget)) void {
+            for (self.children.items, 0..) |*child, i| {
+                switch (child.widget) {
+                    .git_status => {
+                        child.widget.git_status.focused = self.focused and i == self.selected;
+                        child.widget.git_status.refresh();
+                    },
+                    .git_log => {
+                        child.widget.git_log.focused = self.focused and i == self.selected;
+                        child.widget.git_log.refresh();
+                    },
+                    else => {},
+                }
+            }
+        }
+    };
+}
+
+pub fn GitUI(comptime Widget: type) type {
+    return struct {
+        grid: ?grd.Grid,
+        box: wgt.Box(Widget),
+        selected: union(enum) { tabs, stack },
+
+        pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository) !GitUI(Widget) {
+            var box = try wgt.Box(Widget).init(allocator, null, .vert);
+            errdefer box.deinit();
+
+            {
+                var git_ui_tabs = try GitUITabs(Widget).init(allocator);
+                errdefer git_ui_tabs.deinit();
+                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_ui_tabs = git_ui_tabs }), .rect = null, .visibility = null });
+            }
+
+            {
+                var stack = GitUIStack(Widget).init(allocator);
+                errdefer stack.deinit();
+
+                {
+                    var git_log = try GitLog(Widget).init(allocator, repo);
+                    errdefer git_log.deinit();
+                    git_log.focused = true;
+                    git_log.refresh();
+                    try stack.children.append(wgt.Any(Widget).init(.{ .git_log = git_log }));
+                }
+
+                {
+                    var git_status = try GitStatus(Widget).init(allocator);
+                    errdefer git_status.deinit();
+                    git_status.focused = false;
+                    git_status.refresh();
+                    try stack.children.append(wgt.Any(Widget).init(.{ .git_status = git_status }));
+                }
+
+                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_ui_stack = stack }), .rect = null, .visibility = null });
+            }
+
+            return .{
+                .grid = null,
+                .box = box,
+                .selected = .stack,
+            };
+        }
+
+        pub fn deinit(self: *GitUI(Widget)) void {
+            self.box.deinit();
+        }
+
+        pub fn build(self: *GitUI(Widget), max_size: MaybeSize) !void {
+            self.clear();
+            try self.box.build(max_size);
+            self.grid = self.box.grid;
+        }
+
+        pub fn input(self: *GitUI(Widget), key: inp.Key) !void {
+            switch (key) {
+                .arrow_up => {
+                    switch (self.selected) {
+                        .tabs => {
+                            try self.box.children.items[0].any.input(key);
+                        },
+                        .stack => {
+                            var git_ui_stack = &self.box.children.items[1].any.widget.git_ui_stack;
+                            var selected_widget = &git_ui_stack.children.items[git_ui_stack.selected].widget;
+                            switch (selected_widget.*) {
+                                .git_log => {
+                                    const log_selected = selected_widget.git_log.box.children.items[0].any.widget.git_commit_list.selected;
+                                    try self.box.children.items[1].any.input(key);
+                                    if (log_selected == 0) {
+                                        self.selected = .tabs;
+                                    }
+                                },
+                                .git_status => {
+                                    self.selected = .tabs;
+                                },
+                                else => {},
+                            }
+                        },
+                    }
+                },
+                .arrow_down => {
+                    switch (self.selected) {
+                        .tabs => {
+                            self.selected = .stack;
+                        },
+                        .stack => {
+                            try self.box.children.items[1].any.input(key);
+                        },
+                    }
+                },
+                else => {
+                    switch (self.selected) {
+                        .tabs => {
+                            try self.box.children.items[0].any.input(key);
+                        },
+                        .stack => {
+                            try self.box.children.items[1].any.input(key);
+                        },
+                    }
+                },
+            }
+
+            self.refresh();
+        }
+
+        pub fn clear(self: *GitUI(Widget)) void {
+            self.grid = null;
+        }
+
+        pub fn refresh(self: *GitUI(Widget)) void {
+            var git_ui_tabs = &self.box.children.items[0].any.widget.git_ui_tabs;
+            git_ui_tabs.focused = self.selected == .tabs;
+            git_ui_tabs.refresh();
+            var git_ui_stack = &self.box.children.items[1].any.widget.git_ui_stack;
+            git_ui_stack.focused = self.selected == .stack;
+            git_ui_stack.selected = git_ui_tabs.selected;
+            git_ui_stack.refresh();
         }
     };
 }
