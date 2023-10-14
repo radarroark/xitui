@@ -15,7 +15,7 @@ const c = @cImport({
 });
 
 const Widget = union(enum) {
-    text: wgt.Text,
+    text: wgt.Text(Widget),
     box: wgt.Box(Widget),
     text_box: wgt.TextBox(Widget),
     scroll: wgt.Scroll(Widget),

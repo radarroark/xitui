@@ -46,55 +46,57 @@ pub fn Any(comptime Widget: type) type {
     };
 }
 
-pub const Text = struct {
-    allocator: std.mem.Allocator,
-    grid: ?grd.Grid,
-    content: []const u8,
+pub fn Text(comptime Widget: type) type {
+    return struct {
+        allocator: std.mem.Allocator,
+        grid: ?grd.Grid,
+        content: []const u8,
 
-    pub fn init(allocator: std.mem.Allocator, content: []const u8) Text {
-        return .{
-            .allocator = allocator,
-            .grid = null,
-            .content = content,
-        };
-    }
-
-    pub fn deinit(self: *Text) void {
-        if (self.grid) |*grid| {
-            grid.deinit();
-            self.grid = null;
+        pub fn init(allocator: std.mem.Allocator, content: []const u8) Text(Widget) {
+            return .{
+                .allocator = allocator,
+                .grid = null,
+                .content = content,
+            };
         }
-    }
 
-    pub fn build(self: *Text, max_size: MaybeSize) !void {
-        self.clear();
-        const width = try std.unicode.utf8CountCodepoints(self.content);
-        var grid = try grd.Grid.init(self.allocator, .{ .width = @max(1, @min(width, max_size.width orelse width)), .height = 1 });
-        errdefer grid.deinit();
-        var utf8 = (try std.unicode.Utf8View.init(self.content)).iterator();
-        var i: u32 = 0;
-        while (utf8.nextCodepointSlice()) |char| {
-            if (i == grid.size.width) {
-                break;
+        pub fn deinit(self: *Text(Widget)) void {
+            if (self.grid) |*grid| {
+                grid.deinit();
+                self.grid = null;
             }
-            grid.cells.items[try grid.cells.at(.{ 0, i })].rune = char;
-            i += 1;
         }
-        self.grid = grid;
-    }
 
-    pub fn input(self: *Text, key: inp.Key) !void {
-        _ = self;
-        _ = key;
-    }
-
-    pub fn clear(self: *Text) void {
-        if (self.grid) |*grid| {
-            grid.deinit();
-            self.grid = null;
+        pub fn build(self: *Text(Widget), max_size: MaybeSize) !void {
+            self.clear();
+            const width = try std.unicode.utf8CountCodepoints(self.content);
+            var grid = try grd.Grid.init(self.allocator, .{ .width = @max(1, @min(width, max_size.width orelse width)), .height = 1 });
+            errdefer grid.deinit();
+            var utf8 = (try std.unicode.Utf8View.init(self.content)).iterator();
+            var i: u32 = 0;
+            while (utf8.nextCodepointSlice()) |char| {
+                if (i == grid.size.width) {
+                    break;
+                }
+                grid.cells.items[try grid.cells.at(.{ 0, i })].rune = char;
+                i += 1;
+            }
+            self.grid = grid;
         }
-    }
-};
+
+        pub fn input(self: *Text(Widget), key: inp.Key) !void {
+            _ = self;
+            _ = key;
+        }
+
+        pub fn clear(self: *Text(Widget)) void {
+            if (self.grid) |*grid| {
+                grid.deinit();
+                self.grid = null;
+            }
+        }
+    };
+}
 
 pub fn Box(comptime Widget: type) type {
     return struct {
@@ -407,7 +409,7 @@ pub fn TextBox(comptime Widget: type) type {
             var box = try Box(Widget).init(allocator, border_style, .vert);
             errdefer box.deinit();
             for (lines.items) |line| {
-                var text = Text.init(allocator, line.items);
+                var text = Text(Widget).init(allocator, line.items);
                 errdefer text.deinit();
                 try box.children.append(.{ .any = Any(Widget).init(.{ .text = text }), .rect = null, .visibility = null });
             }
