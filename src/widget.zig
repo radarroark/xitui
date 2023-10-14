@@ -7,19 +7,10 @@ const inp = @import("./input.zig");
 pub fn Any(comptime Widget: type) type {
     return struct {
         widget: Widget,
-        size_fn: ?*const fn (max_size: MaybeSize) MaybeSize,
 
         pub fn init(widget: Widget) Any(Widget) {
             return .{
                 .widget = widget,
-                .size_fn = null,
-            };
-        }
-
-        pub fn initWithSizeFn(widget: Widget, size_fn: *const fn (max_size: MaybeSize) MaybeSize) Any(Widget) {
-            return .{
-                .widget = widget,
-                .size_fn = size_fn,
             };
         }
 
@@ -30,9 +21,8 @@ pub fn Any(comptime Widget: type) type {
         }
 
         pub fn build(self: *Any(Widget), max_size: MaybeSize) anyerror!void {
-            const new_max_size = if (self.size_fn) |size_fn| size_fn(max_size) else max_size;
             switch (self.widget) {
-                inline else => |*case| try case.build(new_max_size),
+                inline else => |*case| try case.build(max_size),
             }
         }
 
