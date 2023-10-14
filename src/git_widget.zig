@@ -160,7 +160,7 @@ pub fn GitDiff(comptime Widget: type) type {
             var scroll = try wgt.Scroll(Widget).init(allocator, wgt.Any(Widget).init(.{ .box = inner_box }), .both);
             errdefer scroll.deinit();
 
-            var outer_box = try wgt.Box(Widget).init(allocator, null, .vert);
+            var outer_box = try wgt.Box(Widget).init(allocator, .single, .vert);
             errdefer outer_box.deinit();
             try outer_box.children.append(.{ .any = wgt.Any(Widget).init(.{ .scroll = scroll }), .rect = null, .visibility = null });
 
@@ -268,7 +268,7 @@ pub fn GitDiff(comptime Widget: type) type {
         }
 
         pub fn refresh(self: *GitDiff(Widget)) void {
-            self.box.border_style = if (self.focused) .double else .hidden;
+            self.box.border_style = if (self.focused) .double else .single;
         }
 
         pub fn updateDiff(self: *GitDiff(Widget), commit_diff: ?*c.git_diff) !void {
