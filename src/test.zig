@@ -262,6 +262,39 @@ test "end to end" {
         status_options.flags = c.GIT_STATUS_OPT_INCLUDE_UNTRACKED;
         try expectEqual(0, c.git_status_list_new(&status_list, repo, &status_options));
         defer c.git_status_list_free(status_list);
-        try expectEqual(4, c.git_status_list_entrycount(status_list));
+        const entry_count = c.git_status_list_entrycount(status_list);
+        try expectEqual(4, entry_count);
+
+        // loop over results
+        for (0..entry_count) |i| {
+            const entry = c.git_status_byindex(status_list, i);
+            try std.testing.expect(null != entry);
+            switch (entry.*.status) {
+                c.GIT_STATUS_WT_NEW => {
+                    const old_path = entry.*.index_to_workdir.*.old_file.path;
+                    try std.testing.expect(null != old_path);
+                },
+                c.GIT_STATUS_WT_MODIFIED => {
+                    const old_path = entry.*.index_to_workdir.*.old_file.path;
+                    try std.testing.expect(null != old_path);
+                },
+                c.GIT_STATUS_WT_DELETED => {
+                    const old_path = entry.*.index_to_workdir.*.old_file.path;
+                    try std.testing.expect(null != old_path);
+                },
+                c.GIT_STATUS_WT_TYPECHANGE => {
+                    try std.testing.expect(false);
+                },
+                c.GIT_STATUS_WT_RENAMED => {
+                    try std.testing.expect(false);
+                },
+                c.GIT_STATUS_WT_UNREADABLE => {
+                    try std.testing.expect(false);
+                },
+                else => {
+                    try std.testing.expect(false);
+                },
+            }
+        }
     }
 }
