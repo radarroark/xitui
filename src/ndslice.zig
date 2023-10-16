@@ -4,7 +4,6 @@ const mem = std.mem;
 
 const NDSliceErrors = error{
     InsufficientBufferSize,
-    ZeroLengthDimensionsNotSupported,
     IndexOutOfBounds,
 };
 
@@ -35,7 +34,6 @@ pub fn NDSlice(comptime T: type, comptime N: comptime_int, comptime order_val: M
                 num_items *= s;
             }
             if (num_items > buffer.len) return NDSliceErrors.InsufficientBufferSize;
-            if (num_items == 0) return NDSliceErrors.ZeroLengthDimensionsNotSupported;
 
             return Self{
                 .shape = shape,
