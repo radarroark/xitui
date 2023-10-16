@@ -223,4 +223,41 @@ test "end to end" {
             }
         }
     }
+
+    // status
+    {
+        // make file
+        var goodbye_txt = try repo_dir.createFile("goodbye.txt", .{});
+        defer goodbye_txt.close();
+        try goodbye_txt.writeAll("Goodbye");
+
+        // make dirs
+        var a_dir = try repo_dir.makeOpenPath("a", .{});
+        defer a_dir.close();
+        var b_dir = try repo_dir.makeOpenPath("b", .{});
+        defer b_dir.close();
+        var c_dir = try repo_dir.makeOpenPath("c", .{});
+        defer c_dir.close();
+
+        // make file in dir
+        var farewell_txt = try a_dir.createFile("farewell.txt", .{});
+        defer farewell_txt.close();
+        try farewell_txt.writeAll("Farewell");
+
+        // modify indexed files
+        const hello_txt = try repo_dir.openFile("hello.txt", .{ .mode = .read_write });
+        defer hello_txt.close();
+        try hello_txt.writeAll("hello, world again!");
+        try repo_dir.deleteFile("LICENSE");
+
+        // get status
+        var status_list: ?*c.git_status_list = null;
+        var status_options: c.git_status_options = undefined;
+        try expectEqual(0, c.git_status_options_init(&status_options, c.GIT_STATUS_OPTIONS_VERSION));
+        status_options.show = c.GIT_STATUS_SHOW_WORKDIR_ONLY;
+        status_options.flags = c.GIT_STATUS_OPT_INCLUDE_UNTRACKED;
+        try expectEqual(0, c.git_status_list_new(&status_list, repo, &status_options));
+        defer c.git_status_list_free(status_list);
+        try expectEqual(4, c.git_status_list_entrycount(status_list));
+    }
 }
