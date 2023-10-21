@@ -296,5 +296,51 @@ test "end to end" {
                 },
             }
         }
+
+        // get diff between HEAD and workdir
+        {
+            // head oid
+            var head_object: ?*c.git_object = null;
+            try expectEqual(0, c.git_revparse_single(&head_object, repo, "HEAD"));
+            defer c.git_object_free(head_object);
+            const head_oid = c.git_object_id(head_object);
+
+            // commit
+            var commit: ?*c.git_commit = null;
+            try expectEqual(0, c.git_commit_lookup(&commit, repo, head_oid));
+            defer c.git_commit_free(commit);
+
+            // commit tree
+            const commit_oid = c.git_commit_tree_id(commit);
+            var commit_tree: ?*c.git_tree = null;
+            try expectEqual(0, c.git_tree_lookup(&commit_tree, repo, commit_oid));
+            defer c.git_tree_free(commit_tree);
+
+            // diff
+            var status_diff: ?*c.git_diff = null;
+            try expectEqual(0, c.git_diff_tree_to_workdir(&status_diff, repo, commit_tree, null));
+            defer c.git_diff_free(status_diff);
+
+            var modified_files = std.StringHashMap(void).init(allocator);
+            defer modified_files.deinit();
+
+            const delta_count = c.git_diff_num_deltas(status_diff);
+            for (0..delta_count) |delta_index| {
+                const delta = c.git_diff_get_delta(status_diff, delta_index);
+                try modified_files.put(std.mem.sliceTo(delta.*.old_file.path, 0), {});
+
+                var patch: ?*c.git_patch = null;
+                try expectEqual(0, c.git_patch_from_diff(&patch, status_diff, delta_index));
+                defer c.git_patch_free(patch);
+
+                var buf: c.git_buf = std.mem.zeroes(c.git_buf);
+                try expectEqual(0, c.git_patch_to_buf(&buf, patch));
+                defer c.git_buf_dispose(&buf);
+            }
+
+            try expectEqual(2, modified_files.count());
+            try std.testing.expect(modified_files.contains("LICENSE"));
+            try std.testing.expect(modified_files.contains("hello.txt"));
+        }
     }
 }
