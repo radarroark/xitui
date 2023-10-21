@@ -271,25 +271,12 @@ pub fn GitDiff(comptime Widget: type) type {
             self.box.border_style = if (self.focused) .double else .single;
         }
 
-        pub fn updateDiff(self: *GitDiff(Widget), commit_diff: ?*c.git_diff) !void {
+        pub fn clearDiffs(self: *GitDiff(Widget)) !void {
+            // clear buffers
             for (self.bufs.items) |*buf| {
                 c.git_buf_dispose(buf);
             }
             self.bufs.clearAndFree();
-
-            const delta_count = c.git_diff_num_deltas(commit_diff);
-            for (0..delta_count) |delta_index| {
-                var commit_patch: ?*c.git_patch = null;
-                std.debug.assert(0 == c.git_patch_from_diff(&commit_patch, commit_diff, delta_index));
-                defer c.git_patch_free(commit_patch);
-
-                var commit_buf: c.git_buf = std.mem.zeroes(c.git_buf);
-                std.debug.assert(0 == c.git_patch_to_buf(&commit_buf, commit_patch));
-                {
-                    errdefer c.git_buf_dispose(&commit_buf);
-                    try self.bufs.append(commit_buf);
-                }
-            }
 
             // remove old diff widgets
             for (self.box.children.items[0].any.widget.scroll.child.widget.box.children.items) |*child| {
@@ -297,16 +284,24 @@ pub fn GitDiff(comptime Widget: type) type {
             }
             self.box.children.items[0].any.widget.scroll.child.widget.box.children.clearAndFree();
 
-            // add new diff widgets
-            for (self.bufs.items) |buf| {
-                var text_box = try wgt.TextBox(Widget).init(self.allocator, std.mem.sliceTo(buf.ptr, 0), .hidden);
-                errdefer text_box.deinit();
-                try self.box.children.items[0].any.widget.scroll.child.widget.box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null, .visibility = null });
-            }
-
             // reset scroll position
             self.box.children.items[0].any.widget.scroll.x = 0;
             self.box.children.items[0].any.widget.scroll.y = 0;
+        }
+
+        pub fn addDiff(self: *GitDiff(Widget), patch: ?*c.git_patch) !void {
+            // add new buffer
+            var buf: c.git_buf = std.mem.zeroes(c.git_buf);
+            std.debug.assert(0 == c.git_patch_to_buf(&buf, patch));
+            {
+                errdefer c.git_buf_dispose(&buf);
+                try self.bufs.append(buf);
+            }
+
+            // add new diff widget
+            var text_box = try wgt.TextBox(Widget).init(self.allocator, std.mem.sliceTo(buf.ptr, 0), .hidden);
+            errdefer text_box.deinit();
+            try self.box.children.items[0].any.widget.scroll.child.widget.box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null, .visibility = null });
         }
     };
 }
@@ -447,6 +442,19 @@ pub fn GitLog(comptime Widget: type) type {
             }
         }
 
+        pub fn scrolledToTop(self: GitLog(Widget)) bool {
+            switch (self.selected) {
+                .commit_list => {
+                    const commit_list = &self.box.children.items[0].any.widget.git_commit_list;
+                    return commit_list.selected == 0;
+                },
+                .diff => {
+                    const diff = &self.box.children.items[1].any.widget.git_diff;
+                    return diff.box.children.items[0].any.widget.scroll.y == 0;
+                },
+            }
+        }
+
         fn updateDiff(self: *GitLog(Widget)) !void {
             const commit_list = &self.box.children.items[0].any.widget.git_commit_list;
 
@@ -471,7 +479,15 @@ pub fn GitLog(comptime Widget: type) type {
             defer c.git_diff_free(commit_diff);
 
             var diff = &self.box.children.items[1].any.widget.git_diff;
-            try diff.updateDiff(commit_diff);
+            try diff.clearDiffs();
+
+            const delta_count = c.git_diff_num_deltas(commit_diff);
+            for (0..delta_count) |delta_index| {
+                var patch: ?*c.git_patch = null;
+                std.debug.assert(0 == c.git_patch_from_diff(&patch, commit_diff, delta_index));
+                defer c.git_patch_free(patch);
+                try diff.addDiff(patch);
+            }
         }
 
         fn updatePriority(self: *GitLog(Widget)) void {
@@ -780,8 +796,65 @@ pub fn GitStatus(comptime Widget: type) type {
             }
         }
 
+        pub fn scrolledToTop(self: GitStatus(Widget)) bool {
+            switch (self.selected) {
+                .status_list => {
+                    const status_list = &self.box.children.items[0].any.widget.git_status_list;
+                    return status_list.selected == 0;
+                },
+                .diff => {
+                    const diff = &self.box.children.items[1].any.widget.git_diff;
+                    return diff.box.children.items[0].any.widget.scroll.y == 0;
+                },
+            }
+        }
+
         fn updateDiff(self: *GitStatus(Widget)) !void {
-            _ = self;
+            const status_list = &self.box.children.items[0].any.widget.git_status_list;
+
+            const status = status_list.statuses.items[status_list.selected];
+
+            // head oid
+            var head_object: ?*c.git_object = null;
+            std.debug.assert(0 == c.git_revparse_single(&head_object, self.repo, "HEAD"));
+            defer c.git_object_free(head_object);
+            const head_oid = c.git_object_id(head_object);
+
+            // commit
+            var commit: ?*c.git_commit = null;
+            std.debug.assert(0 == c.git_commit_lookup(&commit, self.repo, head_oid));
+            defer c.git_commit_free(commit);
+
+            // commit tree
+            const commit_oid = c.git_commit_tree_id(commit);
+            var commit_tree: ?*c.git_tree = null;
+            std.debug.assert(0 == c.git_tree_lookup(&commit_tree, self.repo, commit_oid));
+            defer c.git_tree_free(commit_tree);
+
+            // status diff
+            var status_diff: ?*c.git_diff = null;
+            std.debug.assert(0 == c.git_diff_tree_to_workdir(&status_diff, self.repo, commit_tree, null));
+            defer c.git_diff_free(status_diff);
+
+            // patch
+            var patch_maybe: ?*c.git_patch = null;
+            defer if (patch_maybe) |patch| c.git_patch_free(patch);
+            const delta_count = c.git_diff_num_deltas(status_diff);
+            for (0..delta_count) |delta_index| {
+                const delta = c.git_diff_get_delta(status_diff, delta_index);
+                const path = std.mem.sliceTo(delta.*.old_file.path, 0);
+                if (std.mem.eql(u8, path, status.path)) {
+                    std.debug.assert(0 == c.git_patch_from_diff(&patch_maybe, status_diff, delta_index));
+                    break;
+                }
+            }
+
+            // update widget
+            var diff = &self.box.children.items[1].any.widget.git_diff;
+            try diff.clearDiffs();
+            if (patch_maybe) |patch| {
+                try diff.addDiff(patch);
+            }
         }
 
         fn updatePriority(self: *GitStatus(Widget)) void {
@@ -990,17 +1063,17 @@ pub fn GitUI(comptime Widget: type) type {
                             var selected_widget = &git_ui_stack.children.items[git_ui_stack.selected].widget;
                             switch (selected_widget.*) {
                                 .git_log => {
-                                    const selected = selected_widget.git_log.box.children.items[0].any.widget.git_commit_list.selected;
-                                    try self.box.children.items[1].any.input(key);
-                                    if (selected == 0) {
+                                    if (selected_widget.git_log.scrolledToTop()) {
                                         self.selected = .tabs;
+                                    } else {
+                                        try self.box.children.items[1].any.input(key);
                                     }
                                 },
                                 .git_status => {
-                                    const selected = selected_widget.git_status.box.children.items[0].any.widget.git_status_list.selected;
-                                    try self.box.children.items[1].any.input(key);
-                                    if (selected == 0) {
+                                    if (selected_widget.git_status.scrolledToTop()) {
                                         self.selected = .tabs;
+                                    } else {
+                                        try self.box.children.items[1].any.input(key);
                                     }
                                 },
                                 else => {},
