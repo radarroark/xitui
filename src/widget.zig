@@ -1,7 +1,6 @@
 const std = @import("std");
 const grd = @import("./grid.zig");
 const layout = @import("./layout.zig");
-const MaybeSize = layout.MaybeSize;
 const inp = @import("./input.zig");
 
 pub fn Any(comptime Widget: type) type {
@@ -20,9 +19,9 @@ pub fn Any(comptime Widget: type) type {
             }
         }
 
-        pub fn build(self: *Any(Widget), max_size: MaybeSize) anyerror!void {
+        pub fn build(self: *Any(Widget), constraint: layout.Constraint) anyerror!void {
             switch (self.widget) {
-                inline else => |*case| try case.build(max_size),
+                inline else => |*case| try case.build(constraint),
             }
         }
 
@@ -67,10 +66,10 @@ pub fn Text(comptime Widget: type) type {
             }
         }
 
-        pub fn build(self: *Text(Widget), max_size: MaybeSize) !void {
+        pub fn build(self: *Text(Widget), constraint: layout.Constraint) !void {
             self.clear();
             const width = try std.unicode.utf8CountCodepoints(self.content);
-            var grid = try grd.Grid.init(self.allocator, .{ .width = @max(1, @min(width, max_size.width orelse width)), .height = 1 });
+            var grid = try grd.Grid.init(self.allocator, .{ .width = @max(1, @min(width, constraint.max_size.width orelse width)), .height = 1 });
             errdefer grid.deinit();
             var utf8 = (try std.unicode.Utf8View.init(self.content)).iterator();
             var i: u32 = 0;
@@ -110,7 +109,7 @@ pub fn Box(comptime Widget: type) type {
             any: Any(Widget),
             rect: ?layout.Rect,
             visibility: ?struct {
-                min_size: MaybeSize,
+                min_size: layout.MaybeSize,
                 priority: isize,
             },
         };
@@ -147,14 +146,14 @@ pub fn Box(comptime Widget: type) type {
             }
         }
 
-        pub fn build(self: *Box(Widget), max_size: MaybeSize) !void {
+        pub fn build(self: *Box(Widget), constraint: layout.Constraint) !void {
             self.clear();
 
             const border_size: usize = if (self.border_style) |_| 1 else 0;
-            if (max_size.width) |max_width| {
+            if (constraint.max_size.width) |max_width| {
                 if (max_width <= border_size * 2) return;
             }
-            if (max_size.height) |max_height| {
+            if (constraint.max_size.height) |max_height| {
                 if (max_height <= border_size * 2) return;
             }
 
@@ -180,8 +179,8 @@ pub fn Box(comptime Widget: type) type {
 
             var width: usize = 0;
             var height: usize = 0;
-            var remaining_width_maybe = if (max_size.width) |max_width| max_width - (border_size * 2) else null;
-            var remaining_height_maybe = if (max_size.height) |max_height| max_height - (border_size * 2) else null;
+            var remaining_width_maybe = if (constraint.max_size.width) |max_width| max_width - (border_size * 2) else null;
+            var remaining_height_maybe = if (constraint.max_size.height) |max_height| max_height - (border_size * 2) else null;
 
             for (sorted_children.keys(), 0..) |child_index, sorted_child_index| {
                 var child = &self.children.items[child_index];
@@ -207,7 +206,9 @@ pub fn Box(comptime Widget: type) type {
                 // make room for the next children if they have min sizes
                 var expected_remaining_width_maybe = remaining_width_maybe;
                 var expected_remaining_height_maybe = remaining_height_maybe;
+                var child_min_size: layout.MaybeSize = .{ .width = null, .height = null };
                 if (child.visibility) |vis| {
+                    child_min_size = vis.min_size;
                     if (expected_remaining_width_maybe) |*expected_remaining_width| {
                         if (vis.min_size.width) |min_width| {
                             for (sorted_child_index + 1..sorted_children.count()) |next_sorted_child_index| {
@@ -240,7 +241,10 @@ pub fn Box(comptime Widget: type) type {
                     }
                 }
 
-                try child.any.build(.{ .width = expected_remaining_width_maybe, .height = expected_remaining_height_maybe });
+                try child.any.build(.{
+                    .min_size = child_min_size,
+                    .max_size = .{ .width = expected_remaining_width_maybe, .height = expected_remaining_height_maybe },
+                });
 
                 if (child.any.grid()) |child_grid| {
                     switch (self.direction) {
@@ -259,7 +263,9 @@ pub fn Box(comptime Widget: type) type {
             }
 
             width += border_size * 2;
+            width = @max(width, constraint.min_size.width orelse width);
             height += border_size * 2;
+            height = @max(height, constraint.min_size.height orelse height);
 
             var grid = try grd.Grid.init(self.allocator, .{ .width = width, .height = height });
             errdefer grid.deinit();
@@ -431,10 +437,10 @@ pub fn TextBox(comptime Widget: type) type {
             self.lines.deinit();
         }
 
-        pub fn build(self: *TextBox(Widget), max_size: MaybeSize) !void {
+        pub fn build(self: *TextBox(Widget), constraint: layout.Constraint) !void {
             self.clear();
             self.box.border_style = self.border_style;
-            try self.box.build(max_size);
+            try self.box.build(constraint);
             self.grid = self.box.grid;
         }
 
@@ -486,18 +492,27 @@ pub fn Scroll(comptime Widget: type) type {
             }
         }
 
-        pub fn build(self: *Scroll(Widget), max_size: MaybeSize) !void {
+        pub fn build(self: *Scroll(Widget), constraint: layout.Constraint) !void {
             self.clear();
-            const child_max_size: MaybeSize = switch (self.direction) {
-                .vert => .{ .width = max_size.width, .height = null },
-                .horiz => .{ .width = null, .height = max_size.height },
-                .both => .{ .width = null, .height = null },
+            const child_constraint: layout.Constraint = switch (self.direction) {
+                .vert => .{
+                    .min_size = constraint.min_size,
+                    .max_size = .{ .width = constraint.max_size.width, .height = null },
+                },
+                .horiz => .{
+                    .min_size = constraint.min_size,
+                    .max_size = .{ .width = null, .height = constraint.max_size.height },
+                },
+                .both => .{
+                    .min_size = constraint.min_size,
+                    .max_size = .{ .width = null, .height = null },
+                },
             };
-            try self.child.build(child_max_size);
+            try self.child.build(child_constraint);
             if (self.child.grid()) |child_grid| {
                 self.grid = try grd.Grid.initFromGrid(self.allocator, child_grid, .{
-                    .width = @max(1, @min(child_grid.size.width, max_size.width orelse child_grid.size.width)),
-                    .height = @max(1, @min(child_grid.size.height, max_size.height orelse child_grid.size.height)),
+                    .width = @max(1, @min(child_grid.size.width, constraint.max_size.width orelse child_grid.size.width)),
+                    .height = @max(1, @min(child_grid.size.height, constraint.max_size.height orelse child_grid.size.height)),
                 }, self.x, self.y);
             }
         }

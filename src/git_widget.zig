@@ -2,7 +2,7 @@ const std = @import("std");
 const term = @import("./terminal.zig");
 const wgt = @import("./widget.zig");
 const grd = @import("./grid.zig");
-const MaybeSize = @import("./layout.zig").MaybeSize;
+const layout = @import("./layout.zig");
 const inp = @import("./input.zig");
 
 const c = @cImport({
@@ -70,9 +70,9 @@ pub fn GitCommitList(comptime Widget: type) type {
             self.scroll.deinit();
         }
 
-        pub fn build(self: *GitCommitList(Widget), max_size: MaybeSize) !void {
+        pub fn build(self: *GitCommitList(Widget), constraint: layout.Constraint) !void {
             self.clear();
-            try self.scroll.build(max_size);
+            try self.scroll.build(constraint);
             self.grid = self.scroll.grid;
         }
 
@@ -182,9 +182,9 @@ pub fn GitDiff(comptime Widget: type) type {
             self.box.deinit();
         }
 
-        pub fn build(self: *GitDiff(Widget), max_size: MaybeSize) !void {
+        pub fn build(self: *GitDiff(Widget), constraint: layout.Constraint) !void {
             self.clear();
-            try self.box.build(max_size);
+            try self.box.build(constraint);
             self.grid = self.box.grid;
         }
 
@@ -348,9 +348,9 @@ pub fn GitLog(comptime Widget: type) type {
             self.box.deinit();
         }
 
-        pub fn build(self: *GitLog(Widget), max_size: MaybeSize) !void {
+        pub fn build(self: *GitLog(Widget), constraint: layout.Constraint) !void {
             self.clear();
-            try self.box.build(max_size);
+            try self.box.build(constraint);
             self.grid = self.box.grid;
         }
 
@@ -586,9 +586,9 @@ pub fn GitStatusList(comptime Widget: type) type {
             self.scroll.deinit();
         }
 
-        pub fn build(self: *GitStatusList(Widget), max_size: MaybeSize) !void {
+        pub fn build(self: *GitStatusList(Widget), constraint: layout.Constraint) !void {
             self.clear();
-            try self.scroll.build(max_size);
+            try self.scroll.build(constraint);
             self.grid = self.scroll.grid;
         }
 
@@ -676,7 +676,7 @@ pub fn GitStatus(comptime Widget: type) type {
             {
                 var status_list = try GitStatusList(Widget).init(allocator, repo);
                 errdefer status_list.deinit();
-                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_status_list = status_list }), .rect = null, .visibility = .{ .min_size = .{ .width = 30, .height = null }, .priority = 1 } });
+                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_status_list = status_list }), .rect = null, .visibility = .{ .min_size = .{ .width = 20, .height = null }, .priority = 1 } });
             }
 
             // add diff
@@ -702,9 +702,9 @@ pub fn GitStatus(comptime Widget: type) type {
             self.box.deinit();
         }
 
-        pub fn build(self: *GitStatus(Widget), max_size: MaybeSize) !void {
+        pub fn build(self: *GitStatus(Widget), constraint: layout.Constraint) !void {
             self.clear();
-            try self.box.build(max_size);
+            try self.box.build(constraint);
             self.grid = self.box.grid;
         }
 
@@ -904,9 +904,9 @@ pub fn GitUITabs(comptime Widget: type) type {
             self.box.deinit();
         }
 
-        pub fn build(self: *GitUITabs(Widget), max_size: MaybeSize) !void {
+        pub fn build(self: *GitUITabs(Widget), constraint: layout.Constraint) !void {
             self.clear();
-            try self.box.build(max_size);
+            try self.box.build(constraint);
             self.grid = self.box.grid;
         }
 
@@ -962,10 +962,10 @@ pub fn GitUIStack(comptime Widget: type) type {
             self.children.deinit();
         }
 
-        pub fn build(self: *GitUIStack(Widget), max_size: MaybeSize) !void {
+        pub fn build(self: *GitUIStack(Widget), constraint: layout.Constraint) !void {
             self.clear();
             var widget = &self.children.items[self.selected];
-            try widget.build(max_size);
+            try widget.build(constraint);
             self.grid = widget.grid();
         }
 
@@ -1045,9 +1045,9 @@ pub fn GitUI(comptime Widget: type) type {
             self.box.deinit();
         }
 
-        pub fn build(self: *GitUI(Widget), max_size: MaybeSize) !void {
+        pub fn build(self: *GitUI(Widget), constraint: layout.Constraint) !void {
             self.clear();
-            try self.box.build(max_size);
+            try self.box.build(constraint);
             self.grid = self.box.grid;
         }
 

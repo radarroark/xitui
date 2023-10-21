@@ -72,7 +72,10 @@ fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *S
             }
         }
     } else {
-        try root.build(.{ .width = root_size.width, .height = root_size.height });
+        try root.build(.{
+            .min_size = .{ .width = null, .height = null },
+            .max_size = .{ .width = root_size.width, .height = root_size.height },
+        });
         try term.clearRect(term.terminal.tty.writer(), 0, 0, root_size);
         last_size.* = root_size;
 
@@ -103,7 +106,10 @@ fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *S
                 try root.input(key);
             }
         }
-        try root.build(.{ .width = root_size.width, .height = root_size.height });
+        try root.build(.{
+            .min_size = .{ .width = null, .height = null },
+            .max_size = .{ .width = root_size.width, .height = root_size.height },
+        });
     }
 }
 
