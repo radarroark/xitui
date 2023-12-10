@@ -134,7 +134,7 @@ pub fn GitCommitList(comptime Widget: type) type {
         }
 
         fn updateScroll(self: *GitCommitList(Widget)) void {
-            var left_box = &self.scroll.child.widget.box;
+            const left_box = &self.scroll.child.widget.box;
             if (left_box.children.items.len > self.selected) {
                 if (left_box.children.items[self.selected].rect) |rect| {
                     self.scroll.scrollToRect(rect);
@@ -650,7 +650,7 @@ pub fn GitStatusList(comptime Widget: type) type {
         }
 
         fn updateScroll(self: *GitStatusList(Widget)) void {
-            var left_box = &self.scroll.child.widget.box;
+            const left_box = &self.scroll.child.widget.box;
             if (left_box.children.items.len > self.selected) {
                 if (left_box.children.items[self.selected].rect) |rect| {
                     self.scroll.scrollToRect(rect);

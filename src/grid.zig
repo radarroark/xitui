@@ -14,7 +14,7 @@ pub const Grid = struct {
     pub const Cells = NDSlice(Cell, 2, .row_major);
 
     pub fn init(allocator: std.mem.Allocator, size: Size) !Grid {
-        var buffer = try allocator.alloc(Grid.Cell, size.width * size.height);
+        const buffer = try allocator.alloc(Grid.Cell, size.width * size.height);
         errdefer allocator.free(buffer);
         for (buffer) |*cell| {
             cell.rune = null;
@@ -30,7 +30,7 @@ pub const Grid = struct {
     pub fn initFromGrid(allocator: std.mem.Allocator, grid: Grid, size: Size, grid_x: isize, grid_y: isize) !Grid {
         // TODO: for now this is just copying from the source grid.
         // we really should just be getting a view into it, but i'm too lazy right now.
-        var buffer = try allocator.alloc(Grid.Cell, size.width * size.height);
+        const buffer = try allocator.alloc(Grid.Cell, size.width * size.height);
         errdefer allocator.free(buffer);
         for (buffer) |*cell| {
             cell.rune = null;
@@ -38,9 +38,9 @@ pub const Grid = struct {
         const ugrid_x: usize = if (grid_x < 0) 0 else @intCast(grid_x);
         const ugrid_y: usize = if (grid_y < 0) 0 else @intCast(grid_y);
         var cells = try Grid.Cells.init(.{ size.height, size.width }, buffer);
-        var dest_y: usize = if (grid_y < 0) std.math.absCast(grid_y) else 0;
+        var dest_y: usize = if (grid_y < 0) @abs(grid_y) else 0;
         for (ugrid_y..ugrid_y + size.height) |source_y| {
-            var dest_x: usize = if (grid_x < 0) std.math.absCast(grid_x) else 0;
+            var dest_x: usize = if (grid_x < 0) @abs(grid_x) else 0;
             for (ugrid_x..ugrid_x + size.width) |source_x| {
                 if (cells.at(.{ dest_y, dest_x })) |dest_index| {
                     if (grid.cells.at(.{ source_y, source_x })) |source_index| {

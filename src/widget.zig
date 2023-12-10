@@ -470,7 +470,7 @@ pub fn Scroll(comptime Widget: type) type {
         };
 
         pub fn init(allocator: std.mem.Allocator, widget: Any(Widget), direction: Direction) !Scroll(Widget) {
-            var child = try allocator.create(Any(Widget));
+            const child = try allocator.create(Any(Widget));
             errdefer allocator.destroy(child);
             child.* = widget;
             return .{
