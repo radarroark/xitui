@@ -502,6 +502,62 @@ pub fn GitLog(comptime Widget: type) type {
     };
 }
 
+pub fn GitStatusListItem(comptime Widget: type) type {
+    return struct {
+        grid: ?grd.Grid,
+        box: wgt.Box(Widget),
+
+        pub fn init(allocator: std.mem.Allocator, status: GitStatusList(Widget).Status) !GitStatusListItem(Widget) {
+            const status_kind_sym = switch (status.kind) {
+                .untracked => "?",
+                .workspace_modified => "±",
+                .workspace_deleted => "-",
+                .index_added => "+",
+                .index_modified => "±",
+                .index_deleted => "-",
+            };
+            var status_text = try wgt.TextBox(Widget).init(allocator, status_kind_sym, .hidden);
+            errdefer status_text.deinit();
+
+            var path_text = try wgt.TextBox(Widget).init(allocator, status.path, .hidden);
+            errdefer path_text.deinit();
+
+            var box = try wgt.Box(Widget).init(allocator, null, .horiz);
+            errdefer box.deinit();
+            try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = status_text }), .rect = null, .visibility = null });
+            try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = path_text }), .rect = null, .visibility = null });
+
+            return .{
+                .grid = null,
+                .box = box,
+            };
+        }
+
+        pub fn deinit(self: *GitStatusListItem(Widget)) void {
+            self.box.deinit();
+        }
+
+        pub fn build(self: *GitStatusListItem(Widget), constraint: layout.Constraint) !void {
+            self.clear();
+            try self.box.build(constraint);
+            self.grid = self.box.grid;
+        }
+
+        pub fn input(self: *GitStatusListItem(Widget), key: inp.Key) !void {
+            _ = self;
+            _ = key;
+        }
+
+        pub fn clear(self: *GitStatusListItem(Widget)) void {
+            self.grid = null;
+        }
+
+        pub fn setBorder(self: *GitStatusListItem(Widget), border_style: ?wgt.Box(Widget).BorderStyle) void {
+            self.box.children.items[1].any.widget.text_box.border_style = border_style;
+        }
+    };
+}
+
 pub fn GitStatusList(comptime Widget: type) type {
     return struct {
         grid: ?grd.Grid,
@@ -573,9 +629,9 @@ pub fn GitStatusList(comptime Widget: type) type {
             var inner_box = try wgt.Box(Widget).init(allocator, null, .vert);
             errdefer inner_box.deinit();
             for (statuses.items) |item| {
-                var text_box = try wgt.TextBox(Widget).init(allocator, item.path, .hidden);
-                errdefer text_box.deinit();
-                try inner_box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null, .visibility = null });
+                var list_item = try GitStatusListItem(Widget).init(allocator, item);
+                errdefer list_item.deinit();
+                try inner_box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_status_list_item = list_item }), .rect = null, .visibility = null });
             }
 
             // init scroll
@@ -654,11 +710,11 @@ pub fn GitStatusList(comptime Widget: type) type {
         }
 
         pub fn refresh(self: *GitStatusList(Widget)) void {
-            for (self.scroll.child.widget.box.children.items, 0..) |*commit, i| {
-                commit.any.widget.text_box.border_style = if (self.selected == i)
+            for (self.scroll.child.widget.box.children.items, 0..) |*item, i| {
+                item.any.widget.git_status_list_item.setBorder(if (self.selected == i)
                     (if (self.focused) .double else .single)
                 else
-                    .hidden;
+                    .hidden);
             }
         }
 

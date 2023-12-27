@@ -22,6 +22,7 @@ const Widget = union(enum) {
     git_commit_list: git_wgt.GitCommitList(Widget),
     git_diff: git_wgt.GitDiff(Widget),
     git_log: git_wgt.GitLog(Widget),
+    git_status_list_item: git_wgt.GitStatusListItem(Widget),
     git_status_list: git_wgt.GitStatusList(Widget),
     git_status: git_wgt.GitStatus(Widget),
     git_ui_tabs: git_wgt.GitUITabs(Widget),
