@@ -105,10 +105,13 @@ test "end to end" {
 
     // add and commit
     {
-        // make file
+        // make files
         var license = try repo_dir.createFile("LICENSE", .{});
         defer license.close();
         try license.writeAll("do whatever you want");
+        var change_log = try repo_dir.createFile("CHANGELOG", .{});
+        defer change_log.close();
+        try change_log.writeAll("cha-cha-cha-changes");
 
         // change file
         const hello_txt = try repo_dir.openFile("hello.txt", .{ .mode = .read_write });
@@ -121,6 +124,7 @@ test "end to end" {
         try expectEqual(0, c.git_repository_index(&index, repo));
         defer c.git_index_free(index);
         try expectEqual(0, c.git_index_add_bypath(index, "LICENSE"));
+        try expectEqual(0, c.git_index_add_bypath(index, "CHANGELOG"));
         try expectEqual(0, c.git_index_add_bypath(index, "hello.txt"));
         try expectEqual(0, c.git_index_write(index));
 
@@ -230,10 +234,10 @@ test "end to end" {
 
     // status
     {
-        // make file
-        var goodbye_txt = try repo_dir.createFile("goodbye.txt", .{});
-        defer goodbye_txt.close();
-        try goodbye_txt.writeAll("Goodbye");
+        // modify file
+        var readme = try repo_dir.openFile("README", .{ .mode = .read_write });
+        defer readme.close();
+        try readme.writeAll("My really cool project");
 
         // make dirs
         var a_dir = try repo_dir.makeOpenPath("a", .{});
@@ -248,28 +252,63 @@ test "end to end" {
         defer farewell_txt.close();
         try farewell_txt.writeAll("Farewell");
 
+        // delete file
+        try repo_dir.deleteFile("CHANGELOG");
+
         // modify indexed files
         const hello_txt = try repo_dir.openFile("hello.txt", .{ .mode = .read_write });
         defer hello_txt.close();
         try hello_txt.writeAll("hello, world again!");
         try repo_dir.deleteFile("LICENSE");
 
+        // make file
+        var goodbye_txt = try repo_dir.createFile("goodbye.txt", .{});
+        defer goodbye_txt.close();
+        try goodbye_txt.writeAll("Goodbye");
+
+        // add the files
+        var index: ?*c.git_index = null;
+        try expectEqual(0, c.git_repository_index(&index, repo));
+        defer c.git_index_free(index);
+        try expectEqual(0, c.git_index_add_bypath(index, "hello.txt"));
+        try expectEqual(0, c.git_index_add_bypath(index, "goodbye.txt"));
+        try expectEqual(0, c.git_index_remove_bypath(index, "LICENSE"));
+        try expectEqual(0, c.git_index_write(index));
+
         // get status
         var status_list: ?*c.git_status_list = null;
         var status_options: c.git_status_options = undefined;
         try expectEqual(0, c.git_status_options_init(&status_options, c.GIT_STATUS_OPTIONS_VERSION));
-        status_options.show = c.GIT_STATUS_SHOW_WORKDIR_ONLY;
+        status_options.show = c.GIT_STATUS_SHOW_INDEX_AND_WORKDIR;
         status_options.flags = c.GIT_STATUS_OPT_INCLUDE_UNTRACKED;
         try expectEqual(0, c.git_status_list_new(&status_list, repo, &status_options));
         defer c.git_status_list_free(status_list);
         const entry_count = c.git_status_list_entrycount(status_list);
-        try expectEqual(4, entry_count);
+        try expectEqual(6, entry_count);
 
         // loop over results
         for (0..entry_count) |i| {
             const entry = c.git_status_byindex(status_list, i);
             try std.testing.expect(null != entry);
             switch (entry.*.status) {
+                c.GIT_STATUS_INDEX_NEW => {
+                    const old_path = entry.*.head_to_index.*.old_file.path;
+                    try std.testing.expect(null != old_path);
+                },
+                c.GIT_STATUS_INDEX_MODIFIED => {
+                    const old_path = entry.*.head_to_index.*.old_file.path;
+                    try std.testing.expect(null != old_path);
+                },
+                c.GIT_STATUS_INDEX_DELETED => {
+                    const old_path = entry.*.head_to_index.*.old_file.path;
+                    try std.testing.expect(null != old_path);
+                },
+                c.GIT_STATUS_INDEX_RENAMED => {
+                    try std.testing.expect(false);
+                },
+                c.GIT_STATUS_INDEX_TYPECHANGE => {
+                    try std.testing.expect(false);
+                },
                 c.GIT_STATUS_WT_NEW => {
                     const old_path = entry.*.index_to_workdir.*.old_file.path;
                     try std.testing.expect(null != old_path);
@@ -338,9 +377,11 @@ test "end to end" {
                 defer c.git_buf_dispose(&buf);
             }
 
-            try expectEqual(2, modified_files.count());
+            try expectEqual(4, modified_files.count());
             try std.testing.expect(modified_files.contains("LICENSE"));
             try std.testing.expect(modified_files.contains("hello.txt"));
+            try std.testing.expect(modified_files.contains("README"));
+            try std.testing.expect(modified_files.contains("CHANGELOG"));
         }
     }
 }
