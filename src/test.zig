@@ -290,49 +290,30 @@ test "end to end" {
         for (0..entry_count) |i| {
             const entry = c.git_status_byindex(status_list, i);
             try std.testing.expect(null != entry);
-            switch (entry.*.status) {
-                c.GIT_STATUS_INDEX_NEW => {
-                    const old_path = entry.*.head_to_index.*.old_file.path;
-                    try std.testing.expect(null != old_path);
-                },
-                c.GIT_STATUS_INDEX_MODIFIED => {
-                    const old_path = entry.*.head_to_index.*.old_file.path;
-                    try std.testing.expect(null != old_path);
-                },
-                c.GIT_STATUS_INDEX_DELETED => {
-                    const old_path = entry.*.head_to_index.*.old_file.path;
-                    try std.testing.expect(null != old_path);
-                },
-                c.GIT_STATUS_INDEX_RENAMED => {
-                    try std.testing.expect(false);
-                },
-                c.GIT_STATUS_INDEX_TYPECHANGE => {
-                    try std.testing.expect(false);
-                },
-                c.GIT_STATUS_WT_NEW => {
-                    const old_path = entry.*.index_to_workdir.*.old_file.path;
-                    try std.testing.expect(null != old_path);
-                },
-                c.GIT_STATUS_WT_MODIFIED => {
-                    const old_path = entry.*.index_to_workdir.*.old_file.path;
-                    try std.testing.expect(null != old_path);
-                },
-                c.GIT_STATUS_WT_DELETED => {
-                    const old_path = entry.*.index_to_workdir.*.old_file.path;
-                    try std.testing.expect(null != old_path);
-                },
-                c.GIT_STATUS_WT_TYPECHANGE => {
-                    try std.testing.expect(false);
-                },
-                c.GIT_STATUS_WT_RENAMED => {
-                    try std.testing.expect(false);
-                },
-                c.GIT_STATUS_WT_UNREADABLE => {
-                    try std.testing.expect(false);
-                },
-                else => {
-                    try std.testing.expect(false);
-                },
+            const status_kind: c_int = @intCast(entry.*.status);
+            if (c.GIT_STATUS_INDEX_NEW & status_kind != 0) {
+                const old_path = entry.*.head_to_index.*.old_file.path;
+                try std.testing.expect(null != old_path);
+            }
+            if (c.GIT_STATUS_INDEX_MODIFIED & status_kind != 0) {
+                const old_path = entry.*.head_to_index.*.old_file.path;
+                try std.testing.expect(null != old_path);
+            }
+            if (c.GIT_STATUS_INDEX_DELETED & status_kind != 0) {
+                const old_path = entry.*.head_to_index.*.old_file.path;
+                try std.testing.expect(null != old_path);
+            }
+            if (c.GIT_STATUS_WT_NEW & status_kind != 0) {
+                const old_path = entry.*.index_to_workdir.*.old_file.path;
+                try std.testing.expect(null != old_path);
+            }
+            if (c.GIT_STATUS_WT_MODIFIED & status_kind != 0) {
+                const old_path = entry.*.index_to_workdir.*.old_file.path;
+                try std.testing.expect(null != old_path);
+            }
+            if (c.GIT_STATUS_WT_DELETED & status_kind != 0) {
+                const old_path = entry.*.index_to_workdir.*.old_file.path;
+                try std.testing.expect(null != old_path);
             }
         }
 

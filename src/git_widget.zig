@@ -514,8 +514,11 @@ pub fn GitStatusList(comptime Widget: type) type {
 
         pub const StatusKind = enum {
             untracked,
-            modified,
-            deleted,
+            workspace_modified,
+            workspace_deleted,
+            index_added,
+            index_modified,
+            index_deleted,
         };
 
         pub const Status = struct {
@@ -528,7 +531,7 @@ pub fn GitStatusList(comptime Widget: type) type {
             var status_list: ?*c.git_status_list = null;
             var status_options: c.git_status_options = undefined;
             std.debug.assert(0 == c.git_status_options_init(&status_options, c.GIT_STATUS_OPTIONS_VERSION));
-            status_options.show = c.GIT_STATUS_SHOW_WORKDIR_ONLY;
+            status_options.show = c.GIT_STATUS_SHOW_INDEX_AND_WORKDIR;
             status_options.flags = c.GIT_STATUS_OPT_INCLUDE_UNTRACKED;
             std.debug.assert(0 == c.git_status_list_new(&status_list, repo, &status_options));
             errdefer c.git_status_list_free(status_list);
@@ -540,20 +543,30 @@ pub fn GitStatusList(comptime Widget: type) type {
             for (0..entry_count) |i| {
                 const entry = c.git_status_byindex(status_list, i);
                 try std.testing.expect(null != entry);
-                switch (entry.*.status) {
-                    c.GIT_STATUS_WT_NEW => {
-                        const old_path = entry.*.index_to_workdir.*.old_file.path;
-                        try statuses.append(.{ .kind = .untracked, .path = std.mem.sliceTo(old_path, 0) });
-                    },
-                    c.GIT_STATUS_WT_MODIFIED => {
-                        const old_path = entry.*.index_to_workdir.*.old_file.path;
-                        try statuses.append(.{ .kind = .modified, .path = std.mem.sliceTo(old_path, 0) });
-                    },
-                    c.GIT_STATUS_WT_DELETED => {
-                        const old_path = entry.*.index_to_workdir.*.old_file.path;
-                        try statuses.append(.{ .kind = .deleted, .path = std.mem.sliceTo(old_path, 0) });
-                    },
-                    else => {},
+                const status_kind: c_int = @intCast(entry.*.status);
+                if (c.GIT_STATUS_INDEX_NEW & status_kind != 0) {
+                    const old_path = entry.*.head_to_index.*.old_file.path;
+                    try statuses.append(.{ .kind = .index_added, .path = std.mem.sliceTo(old_path, 0) });
+                }
+                if (c.GIT_STATUS_INDEX_MODIFIED & status_kind != 0) {
+                    const old_path = entry.*.head_to_index.*.old_file.path;
+                    try statuses.append(.{ .kind = .index_modified, .path = std.mem.sliceTo(old_path, 0) });
+                }
+                if (c.GIT_STATUS_INDEX_DELETED & status_kind != 0) {
+                    const old_path = entry.*.head_to_index.*.old_file.path;
+                    try statuses.append(.{ .kind = .index_deleted, .path = std.mem.sliceTo(old_path, 0) });
+                }
+                if (c.GIT_STATUS_WT_NEW & status_kind != 0) {
+                    const old_path = entry.*.index_to_workdir.*.old_file.path;
+                    try statuses.append(.{ .kind = .untracked, .path = std.mem.sliceTo(old_path, 0) });
+                }
+                if (c.GIT_STATUS_WT_MODIFIED & status_kind != 0) {
+                    const old_path = entry.*.index_to_workdir.*.old_file.path;
+                    try statuses.append(.{ .kind = .workspace_modified, .path = std.mem.sliceTo(old_path, 0) });
+                }
+                if (c.GIT_STATUS_WT_DELETED & status_kind != 0) {
+                    const old_path = entry.*.index_to_workdir.*.old_file.path;
+                    try statuses.append(.{ .kind = .workspace_deleted, .path = std.mem.sliceTo(old_path, 0) });
                 }
             }
 
@@ -814,26 +827,38 @@ pub fn GitStatus(comptime Widget: type) type {
 
             const status = status_list.statuses.items[status_list.selected];
 
-            // head oid
-            var head_object: ?*c.git_object = null;
-            std.debug.assert(0 == c.git_revparse_single(&head_object, self.repo, "HEAD"));
-            defer c.git_object_free(head_object);
-            const head_oid = c.git_object_id(head_object);
-
-            // commit
-            var commit: ?*c.git_commit = null;
-            std.debug.assert(0 == c.git_commit_lookup(&commit, self.repo, head_oid));
-            defer c.git_commit_free(commit);
-
-            // commit tree
-            const commit_oid = c.git_commit_tree_id(commit);
-            var commit_tree: ?*c.git_tree = null;
-            std.debug.assert(0 == c.git_tree_lookup(&commit_tree, self.repo, commit_oid));
-            defer c.git_tree_free(commit_tree);
+            // index
+            var index: ?*c.git_index = null;
+            std.debug.assert(0 == c.git_repository_index(&index, self.repo));
+            defer c.git_index_free(index);
 
             // status diff
             var status_diff: ?*c.git_diff = null;
-            std.debug.assert(0 == c.git_diff_tree_to_workdir(&status_diff, self.repo, commit_tree, null));
+            switch (status.kind) {
+                .untracked, .workspace_modified, .workspace_deleted => {
+                    std.debug.assert(0 == c.git_diff_index_to_workdir(&status_diff, self.repo, index, null));
+                },
+                .index_added, .index_modified, .index_deleted => {
+                    // head oid
+                    var head_object: ?*c.git_object = null;
+                    std.debug.assert(0 == c.git_revparse_single(&head_object, self.repo, "HEAD"));
+                    defer c.git_object_free(head_object);
+                    const head_oid = c.git_object_id(head_object);
+
+                    // commit
+                    var commit: ?*c.git_commit = null;
+                    std.debug.assert(0 == c.git_commit_lookup(&commit, self.repo, head_oid));
+                    defer c.git_commit_free(commit);
+
+                    // commit tree
+                    const commit_oid = c.git_commit_tree_id(commit);
+                    var commit_tree: ?*c.git_tree = null;
+                    std.debug.assert(0 == c.git_tree_lookup(&commit_tree, self.repo, commit_oid));
+                    defer c.git_tree_free(commit_tree);
+
+                    std.debug.assert(0 == c.git_diff_tree_to_index(&status_diff, self.repo, commit_tree, index, null));
+                },
+            }
             defer c.git_diff_free(status_diff);
 
             // patch
