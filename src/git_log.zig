@@ -45,11 +45,11 @@ pub fn GitCommitList(comptime Widget: type) type {
                 const line = std.mem.sliceTo(c.git_commit_message(commit), '\n');
                 var text_box = try wgt.TextBox(Widget).init(allocator, line, .hidden);
                 errdefer text_box.deinit();
-                try inner_box.children.append(.{ .any = wgt.Any(Widget).init(.{ .text_box = text_box }), .rect = null, .visibility = null });
+                try inner_box.children.append(.{ .widget = .{ .text_box = text_box }, .rect = null, .visibility = null });
             }
 
             // init scroll
-            var scroll = try wgt.Scroll(Widget).init(allocator, wgt.Any(Widget).init(.{ .box = inner_box }), .vert);
+            var scroll = try wgt.Scroll(Widget).init(allocator, .{ .box = inner_box }, .vert);
             errdefer scroll.deinit();
 
             return .{
@@ -125,8 +125,8 @@ pub fn GitCommitList(comptime Widget: type) type {
         }
 
         pub fn refresh(self: *GitCommitList(Widget)) void {
-            for (self.scroll.child.widget.box.children.items, 0..) |*commit, i| {
-                commit.any.widget.text_box.border_style = if (self.selected == i)
+            for (self.scroll.child.box.children.items, 0..) |*commit, i| {
+                commit.widget.text_box.border_style = if (self.selected == i)
                     (if (self.focused) .double else .single)
                 else
                     .hidden;
@@ -134,7 +134,7 @@ pub fn GitCommitList(comptime Widget: type) type {
         }
 
         fn updateScroll(self: *GitCommitList(Widget)) void {
-            const left_box = &self.scroll.child.widget.box;
+            const left_box = &self.scroll.child.box;
             if (left_box.children.items.len > self.selected) {
                 if (left_box.children.items[self.selected].rect) |rect| {
                     self.scroll.scrollToRect(rect);
@@ -160,14 +160,14 @@ pub fn GitLog(comptime Widget: type) type {
             {
                 var commit_list = try GitCommitList(Widget).init(allocator, repo);
                 errdefer commit_list.deinit();
-                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_commit_list = commit_list }), .rect = null, .visibility = .{ .min_size = .{ .width = 30, .height = null }, .priority = 1 } });
+                try box.children.append(.{ .widget = .{ .git_commit_list = commit_list }, .rect = null, .visibility = .{ .min_size = .{ .width = 30, .height = null }, .priority = 1 } });
             }
 
             // add diff
             {
                 var diff = try g_diff.GitDiff(Widget).init(allocator, repo);
                 errdefer diff.deinit();
-                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_diff = diff }), .rect = null, .visibility = .{ .min_size = .{ .width = 60, .height = null }, .priority = 0 } });
+                try box.children.append(.{ .widget = .{ .git_diff = diff }, .rect = null, .visibility = .{ .min_size = .{ .width = 60, .height = null }, .priority = 0 } });
             }
 
             var git_log = GitLog(Widget){
@@ -193,15 +193,15 @@ pub fn GitLog(comptime Widget: type) type {
         }
 
         pub fn input(self: *GitLog(Widget), key: inp.Key) !void {
-            const diff_scroll_x = self.box.children.items[1].any.widget.git_diff.box.children.items[0].any.widget.scroll.x;
+            const diff_scroll_x = self.box.children.items[1].widget.git_diff.box.children.items[0].widget.scroll.x;
 
             switch (self.selected) {
                 .commit_list => {
-                    try self.box.children.items[0].any.input(key);
+                    try self.box.children.items[0].widget.input(key);
                     try self.updateDiff();
                 },
                 .diff => {
-                    try self.box.children.items[1].any.input(key);
+                    try self.box.children.items[1].widget.input(key);
                 },
             }
 
@@ -262,18 +262,18 @@ pub fn GitLog(comptime Widget: type) type {
         pub fn refresh(self: *GitLog(Widget)) void {
             switch (self.selected) {
                 .commit_list => {
-                    var commit_list = &self.box.children.items[0].any.widget.git_commit_list;
+                    var commit_list = &self.box.children.items[0].widget.git_commit_list;
                     commit_list.focused = self.focused;
                     commit_list.refresh();
-                    var diff = &self.box.children.items[1].any.widget.git_diff;
+                    var diff = &self.box.children.items[1].widget.git_diff;
                     diff.focused = false;
                     diff.refresh();
                 },
                 .diff => {
-                    var commit_list = &self.box.children.items[0].any.widget.git_commit_list;
+                    var commit_list = &self.box.children.items[0].widget.git_commit_list;
                     commit_list.focused = false;
                     commit_list.refresh();
-                    var diff = &self.box.children.items[1].any.widget.git_diff;
+                    var diff = &self.box.children.items[1].widget.git_diff;
                     diff.focused = self.focused;
                     diff.refresh();
                 },
@@ -283,18 +283,18 @@ pub fn GitLog(comptime Widget: type) type {
         pub fn scrolledToTop(self: GitLog(Widget)) bool {
             switch (self.selected) {
                 .commit_list => {
-                    const commit_list = &self.box.children.items[0].any.widget.git_commit_list;
+                    const commit_list = &self.box.children.items[0].widget.git_commit_list;
                     return commit_list.selected == 0;
                 },
                 .diff => {
-                    const diff = &self.box.children.items[1].any.widget.git_diff;
+                    const diff = &self.box.children.items[1].widget.git_diff;
                     return diff.getScrollY() == 0;
                 },
             }
         }
 
         fn updateDiff(self: *GitLog(Widget)) !void {
-            const commit_list = &self.box.children.items[0].any.widget.git_commit_list;
+            const commit_list = &self.box.children.items[0].widget.git_commit_list;
 
             const commit = commit_list.commits.items[commit_list.selected];
 
@@ -316,7 +316,7 @@ pub fn GitLog(comptime Widget: type) type {
             std.debug.assert(0 == c.git_diff_tree_to_tree(&commit_diff, self.repo, prev_commit_tree, commit_tree, null));
             defer c.git_diff_free(commit_diff);
 
-            var diff = &self.box.children.items[1].any.widget.git_diff;
+            var diff = &self.box.children.items[1].widget.git_diff;
             try diff.clearDiffs();
 
             const delta_count = c.git_diff_num_deltas(commit_diff);

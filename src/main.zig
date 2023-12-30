@@ -10,7 +10,7 @@ const g_diff = @import("./git_diff.zig");
 const g_log = @import("./git_log.zig");
 const g_stat = @import("./git_status.zig");
 const g_ui = @import("./git_ui.zig");
-const Size = @import("./layout.zig").Size;
+const layout = @import("./layout.zig");
 const inp = @import("./input.zig");
 
 const c = @cImport({
@@ -33,12 +33,42 @@ const Widget = union(enum) {
     git_ui_tabs: g_ui.GitUITabs(Widget),
     git_ui_stack: g_ui.GitUIStack(Widget),
     git_ui: g_ui.GitUI(Widget),
+
+    pub fn deinit(self: *Widget) void {
+        switch (self.*) {
+            inline else => |*case| case.deinit(),
+        }
+    }
+
+    pub fn build(self: *Widget, constraint: layout.Constraint) anyerror!void {
+        switch (self.*) {
+            inline else => |*case| try case.build(constraint),
+        }
+    }
+
+    pub fn input(self: *Widget, key: inp.Key) anyerror!void {
+        switch (self.*) {
+            inline else => |*case| try case.input(key),
+        }
+    }
+
+    pub fn grid(self: *Widget) ?grd.Grid {
+        switch (self.*) {
+            inline else => |*case| return case.grid,
+        }
+    }
+
+    pub fn clear(self: *Widget) void {
+        switch (self.*) {
+            inline else => |*case| case.clear(),
+        }
+    }
 };
 
-var root: wgt.Any(Widget) = undefined;
+var root: Widget = undefined;
 
-fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *Size) !void {
-    const root_size = Size{ .width = term.terminal.size.width, .height = term.terminal.size.height };
+fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *layout.Size) !void {
+    const root_size = layout.Size{ .width = term.terminal.size.width, .height = term.terminal.size.height };
     if (root_size.width == 0 or root_size.height == 0) {
         return;
     }
@@ -137,7 +167,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    root = wgt.Any(Widget).init(.{ .git_ui = try g_ui.GitUI(Widget).init(allocator, repo) });
+    root = .{ .git_ui = try g_ui.GitUI(Widget).init(allocator, repo) };
     defer root.deinit();
 
     // init term
@@ -147,7 +177,7 @@ pub fn main() !void {
 
     var last_grid_maybe: ?grd.Grid = null;
     defer if (last_grid_maybe) |*last_grid| last_grid.deinit();
-    var last_size = Size{ .width = 0, .height = 0 };
+    var last_size = layout.Size{ .width = 0, .height = 0 };
 
     while (true) {
         tick(allocator, &last_grid_maybe, &last_size) catch |err| {

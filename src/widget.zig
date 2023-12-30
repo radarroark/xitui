@@ -3,48 +3,6 @@ const grd = @import("./grid.zig");
 const layout = @import("./layout.zig");
 const inp = @import("./input.zig");
 
-pub fn Any(comptime Widget: type) type {
-    return struct {
-        widget: Widget,
-
-        pub fn init(widget: Widget) Any(Widget) {
-            return .{
-                .widget = widget,
-            };
-        }
-
-        pub fn deinit(self: *Any(Widget)) void {
-            switch (self.widget) {
-                inline else => |*case| case.deinit(),
-            }
-        }
-
-        pub fn build(self: *Any(Widget), constraint: layout.Constraint) anyerror!void {
-            switch (self.widget) {
-                inline else => |*case| try case.build(constraint),
-            }
-        }
-
-        pub fn input(self: *Any(Widget), key: inp.Key) anyerror!void {
-            switch (self.widget) {
-                inline else => |*case| try case.input(key),
-            }
-        }
-
-        pub fn grid(self: *Any(Widget)) ?grd.Grid {
-            switch (self.widget) {
-                inline else => |*case| return case.grid,
-            }
-        }
-
-        pub fn clear(self: *Any(Widget)) void {
-            switch (self.widget) {
-                inline else => |*case| case.clear(),
-            }
-        }
-    };
-}
-
 pub fn Text(comptime Widget: type) type {
     return struct {
         allocator: std.mem.Allocator,
@@ -106,7 +64,7 @@ pub fn Box(comptime Widget: type) type {
         direction: Direction,
 
         pub const Child = struct {
-            any: Any(Widget),
+            widget: Widget,
             rect: ?layout.Rect,
             visibility: ?struct {
                 min_size: layout.MaybeSize,
@@ -137,7 +95,7 @@ pub fn Box(comptime Widget: type) type {
 
         pub fn deinit(self: *Box(Widget)) void {
             for (self.children.items) |*child| {
-                child.any.deinit();
+                child.widget.deinit();
             }
             self.children.deinit();
             if (self.grid) |*grid| {
@@ -184,7 +142,7 @@ pub fn Box(comptime Widget: type) type {
 
             for (sorted_children.keys(), 0..) |child_index, sorted_child_index| {
                 var child = &self.children.items[child_index];
-                child.any.clear();
+                child.widget.clear();
 
                 if (remaining_width_maybe) |remaining_width| {
                     if (remaining_width <= 0) continue;
@@ -241,12 +199,12 @@ pub fn Box(comptime Widget: type) type {
                     }
                 }
 
-                try child.any.build(.{
+                try child.widget.build(.{
                     .min_size = child_min_size,
                     .max_size = .{ .width = expected_remaining_width_maybe, .height = expected_remaining_height_maybe },
                 });
 
-                if (child.any.grid()) |child_grid| {
+                if (child.widget.grid()) |child_grid| {
                     switch (self.direction) {
                         .vert => {
                             if (remaining_height_maybe) |*remaining_height| remaining_height.* -|= child_grid.size.height;
@@ -274,7 +232,7 @@ pub fn Box(comptime Widget: type) type {
                 .vert => {
                     var line: usize = 0;
                     for (self.children.items) |*child| {
-                        if (child.any.grid()) |child_grid| {
+                        if (child.widget.grid()) |child_grid| {
                             child.rect = .{ .x = 0, .y = @as(isize, @intCast(line + border_size)), .size = child_grid.size };
                             for (0..child_grid.size.height) |y| {
                                 for (0..child_grid.size.width) |x| {
@@ -293,7 +251,7 @@ pub fn Box(comptime Widget: type) type {
                 .horiz => {
                     var col: usize = 0;
                     for (self.children.items) |*child| {
-                        if (child.any.grid()) |child_grid| {
+                        if (child.widget.grid()) |child_grid| {
                             child.rect = .{ .x = @as(isize, @intCast(col + border_size)), .y = 0, .size = child_grid.size };
                             for (0..child_grid.size.width) |x| {
                                 for (0..child_grid.size.height) |y| {
@@ -366,7 +324,7 @@ pub fn Box(comptime Widget: type) type {
 
         pub fn input(self: *Box(Widget), key: inp.Key) !void {
             for (self.children.items) |*child| {
-                try child.any.input(key);
+                try child.widget.input(key);
             }
         }
 
@@ -417,7 +375,7 @@ pub fn TextBox(comptime Widget: type) type {
             for (lines.items) |line| {
                 var text = Text(Widget).init(allocator, line.items);
                 errdefer text.deinit();
-                try box.children.append(.{ .any = Any(Widget).init(.{ .text = text }), .rect = null, .visibility = null });
+                try box.children.append(.{ .widget = .{ .text = text }, .rect = null, .visibility = null });
             }
 
             return .{
@@ -458,7 +416,7 @@ pub fn Scroll(comptime Widget: type) type {
     return struct {
         allocator: std.mem.Allocator,
         grid: ?grd.Grid,
-        child: *Any(Widget),
+        child: *Widget,
         x: isize,
         y: isize,
         direction: Direction,
@@ -469,8 +427,8 @@ pub fn Scroll(comptime Widget: type) type {
             both,
         };
 
-        pub fn init(allocator: std.mem.Allocator, widget: Any(Widget), direction: Direction) !Scroll(Widget) {
-            const child = try allocator.create(Any(Widget));
+        pub fn init(allocator: std.mem.Allocator, widget: Widget, direction: Direction) !Scroll(Widget) {
+            const child = try allocator.create(Widget);
             errdefer allocator.destroy(child);
             child.* = widget;
             return .{
