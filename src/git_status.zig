@@ -4,6 +4,7 @@ const grd = @import("./grid.zig");
 const layout = @import("./layout.zig");
 const inp = @import("./input.zig");
 const g_diff = @import("./git_diff.zig");
+const g_ui = @import("./git_ui.zig");
 
 const c = @cImport({
     @cInclude("git2.h");
@@ -289,26 +290,50 @@ pub fn GitStatusContent(comptime Widget: type) type {
     return struct {
         grid: ?grd.Grid,
         box: wgt.Box(Widget),
-        repo: ?*c.git_repository,
         filtered_statuses: std.ArrayList(Status),
-        allocator: std.mem.Allocator,
+        repo: ?*c.git_repository,
         selected: enum { status_list, diff },
         focused: bool,
 
         pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository, statuses: []Status, selected: IndexKind) !GitStatusContent(Widget) {
+            var filtered_statuses = std.ArrayList(Status).init(allocator);
+            errdefer filtered_statuses.deinit();
+            for (statuses) |status| {
+                if (status.kind == selected) {
+                    try filtered_statuses.append(status);
+                }
+            }
+
             var box = try wgt.Box(Widget).init(allocator, null, .horiz);
             errdefer box.deinit();
+
+            // add status list
+            {
+                var status_list = try GitStatusList(Widget).init(allocator, filtered_statuses.items);
+                errdefer status_list.deinit();
+                status_list.focused = true;
+                status_list.refresh();
+                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_status_list = status_list }), .rect = null, .visibility = .{ .min_size = .{ .width = 20, .height = null }, .priority = 1 } });
+            }
+
+            // add diff
+            {
+                var diff = try g_diff.GitDiff(Widget).init(allocator, repo);
+                errdefer diff.deinit();
+                diff.focused = false;
+                diff.refresh();
+                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_diff = diff }), .rect = null, .visibility = .{ .min_size = .{ .width = 60, .height = null }, .priority = 0 } });
+            }
 
             var status_content = GitStatusContent(Widget){
                 .grid = null,
                 .box = box,
+                .filtered_statuses = filtered_statuses,
                 .repo = repo,
-                .filtered_statuses = std.ArrayList(Status).init(allocator),
-                .allocator = allocator,
                 .selected = .status_list,
                 .focused = false,
             };
-            try status_content.update(statuses, selected);
+            try status_content.updateDiff();
             return status_content;
         }
 
@@ -397,21 +422,12 @@ pub fn GitStatusContent(comptime Widget: type) type {
         }
 
         pub fn refresh(self: *GitStatusContent(Widget)) void {
-            for (self.box.children.items) |*item| {
-                switch (item.any.widget) {
-                    .git_status_list => {
-                        var status_list = &self.box.children.items[0].any.widget.git_status_list;
-                        status_list.focused = self.selected == .status_list and self.focused;
-                        status_list.refresh();
-                    },
-                    .git_diff => {
-                        var diff = &self.box.children.items[1].any.widget.git_diff;
-                        diff.focused = self.selected == .diff and self.focused;
-                        diff.refresh();
-                    },
-                    else => {},
-                }
-            }
+            var status_list = &self.box.children.items[0].any.widget.git_status_list;
+            status_list.focused = self.focused and self.selected == .status_list;
+            status_list.refresh();
+            var diff = &self.box.children.items[1].any.widget.git_diff;
+            diff.focused = self.focused and self.selected == .diff;
+            diff.refresh();
         }
 
         pub fn scrolledToTop(self: GitStatusContent(Widget)) bool {
@@ -425,36 +441,6 @@ pub fn GitStatusContent(comptime Widget: type) type {
                     return diff.getScrollY() == 0;
                 },
             }
-        }
-
-        fn update(self: *GitStatusContent(Widget), statuses: []Status, selected: IndexKind) !void {
-            for (self.box.children.items) |*child| {
-                child.any.deinit();
-            }
-            self.box.children.clearAndFree();
-
-            self.filtered_statuses.clearAndFree();
-            for (statuses) |status| {
-                if (status.kind == selected) {
-                    try self.filtered_statuses.append(status);
-                }
-            }
-
-            // add status list
-            {
-                var status_list = try GitStatusList(Widget).init(self.allocator, self.filtered_statuses.items);
-                errdefer status_list.deinit();
-                try self.box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_status_list = status_list }), .rect = null, .visibility = .{ .min_size = .{ .width = 20, .height = null }, .priority = 1 } });
-            }
-
-            // add diff
-            {
-                var diff = try g_diff.GitDiff(Widget).init(self.allocator, self.repo);
-                errdefer diff.deinit();
-                try self.box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_diff = diff }), .rect = null, .visibility = .{ .min_size = .{ .width = 60, .height = null }, .priority = 0 } });
-            }
-
-            try self.updateDiff();
         }
 
         fn updateDiff(self: *GitStatusContent(Widget)) !void {
@@ -597,10 +583,20 @@ pub fn GitStatus(comptime Widget: type) type {
             errdefer status_tabs.deinit();
             try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_status_tabs = status_tabs }), .rect = null, .visibility = null });
 
-            // add status content
-            var status_content = try GitStatusContent(Widget).init(allocator, repo, statuses.items, status_tabs.selected);
-            errdefer status_content.deinit();
-            try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_status_content = status_content }), .rect = null, .visibility = null });
+            // add stack
+            {
+                var stack = g_ui.GitUIStack(Widget).init(allocator);
+                errdefer stack.deinit();
+
+                inline for (@typeInfo(IndexKind).Enum.fields) |field| {
+                    const kind: IndexKind = @enumFromInt(field.value);
+                    var status_content = try GitStatusContent(Widget).init(allocator, repo, statuses.items, kind);
+                    errdefer status_content.deinit();
+                    try stack.children.append(wgt.Any(Widget).init(.{ .git_status_content = status_content }));
+                }
+
+                try box.children.append(.{ .any = wgt.Any(Widget).init(.{ .git_ui_stack = stack }), .rect = null, .visibility = null });
+            }
 
             return GitStatus(Widget){
                 .grid = null,
@@ -632,22 +628,19 @@ pub fn GitStatus(comptime Widget: type) type {
                         self.selected = .status_content;
                     } else {
                         try status_tabs.input(key);
-
-                        var status_content = &self.box.children.items[1].any.widget.git_status_content;
-                        try status_content.update(self.statuses.items, status_tabs.selected);
                     }
                 },
                 .status_content => {
-                    const status_content = &self.box.children.items[1].any.widget.git_status_content;
-                    if (key == .arrow_up and status_content.scrolledToTop()) {
+                    const stack = &self.box.children.items[1].any.widget.git_ui_stack;
+                    if (key == .arrow_up and stack.getSelected().git_status_content.scrolledToTop()) {
                         self.selected = .status_tabs;
                     } else {
-                        try status_content.input(key);
+                        try stack.input(key);
                     }
                 },
             }
 
-            if (self.selected == .status_content and self.box.children.items[1].any.widget.git_status_content.grid == null) {
+            if (self.selected == .status_content and self.box.children.items[1].any.widget.git_ui_stack.getSelected().git_status_content.grid == null) {
                 self.selected = .status_tabs;
             }
 
@@ -659,21 +652,13 @@ pub fn GitStatus(comptime Widget: type) type {
         }
 
         pub fn refresh(self: *GitStatus(Widget)) void {
-            for (self.box.children.items) |*item| {
-                switch (item.any.widget) {
-                    .git_status_tabs => {
-                        var status_tabs = &item.any.widget.git_status_tabs;
-                        status_tabs.focused = self.selected == .status_tabs and self.focused;
-                        status_tabs.refresh();
-                    },
-                    .git_status_content => {
-                        var status_content = &item.any.widget.git_status_content;
-                        status_content.focused = self.selected == .status_content and self.focused;
-                        status_content.refresh();
-                    },
-                    else => {},
-                }
-            }
+            var status_tabs = &self.box.children.items[0].any.widget.git_status_tabs;
+            status_tabs.focused = self.focused and self.selected == .status_tabs;
+            status_tabs.refresh();
+            var stack = &self.box.children.items[1].any.widget.git_ui_stack;
+            stack.focused = self.focused and self.selected == .status_content;
+            stack.selected = @intFromEnum(status_tabs.selected);
+            stack.refresh();
         }
     };
 }

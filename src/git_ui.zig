@@ -121,17 +121,18 @@ pub fn GitUIStack(comptime Widget: type) type {
         pub fn refresh(self: *GitUIStack(Widget)) void {
             for (self.children.items, 0..) |*child, i| {
                 switch (child.widget) {
-                    .git_status => {
-                        child.widget.git_status.focused = self.focused and i == self.selected;
-                        child.widget.git_status.refresh();
+                    inline else => |*case| {
+                        if (@hasField(@TypeOf(case.*), "focused") and @hasDecl(@TypeOf(case.*), "refresh")) {
+                            case.focused = self.focused and i == self.selected;
+                            case.refresh();
+                        }
                     },
-                    .git_log => {
-                        child.widget.git_log.focused = self.focused and i == self.selected;
-                        child.widget.git_log.refresh();
-                    },
-                    else => {},
                 }
             }
+        }
+
+        pub fn getSelected(self: GitUIStack(Widget)) *Widget {
+            return &self.children.items[self.selected].widget;
         }
     };
 }
@@ -200,8 +201,7 @@ pub fn GitUI(comptime Widget: type) type {
                             try self.box.children.items[0].any.input(key);
                         },
                         .stack => {
-                            var git_ui_stack = &self.box.children.items[1].any.widget.git_ui_stack;
-                            var selected_widget = &git_ui_stack.children.items[git_ui_stack.selected].widget;
+                            var selected_widget = self.box.children.items[1].any.widget.git_ui_stack.getSelected();
                             switch (selected_widget.*) {
                                 .git_log => {
                                     if (selected_widget.git_log.scrolledToTop()) {
