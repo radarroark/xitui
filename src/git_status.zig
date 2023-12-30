@@ -11,22 +11,22 @@ const c = @cImport({
 });
 
 pub const IndexKind = enum {
-    staged,
-    unstaged,
-    untracked,
+    added,
+    not_added,
+    not_tracked,
 };
 
 pub const StatusKind = union(IndexKind) {
-    staged: enum {
-        added,
+    added: enum {
+        created,
         modified,
         deleted,
     },
-    unstaged: enum {
+    not_added: enum {
         modified,
         deleted,
     },
-    untracked,
+    not_tracked,
 };
 
 pub const Status = struct {
@@ -41,16 +41,16 @@ pub fn GitStatusListItem(comptime Widget: type) type {
 
         pub fn init(allocator: std.mem.Allocator, status: Status) !GitStatusListItem(Widget) {
             const status_kind_sym = switch (status.kind) {
-                .staged => switch (status.kind.staged) {
-                    .added => "+",
+                .added => switch (status.kind.added) {
+                    .created => "+",
                     .modified => "±",
                     .deleted => "-",
                 },
-                .unstaged => switch (status.kind.unstaged) {
+                .not_added => switch (status.kind.not_added) {
                     .modified => "±",
                     .deleted => "-",
                 },
-                .untracked => "?",
+                .not_tracked => "?",
             };
             var status_text = try wgt.TextBox(Widget).init(allocator, status_kind_sym, .hidden);
             errdefer status_text.deinit();
@@ -228,10 +228,16 @@ pub fn GitStatusTabs(comptime Widget: type) type {
             var selected_maybe: ?IndexKind = null;
 
             inline for (@typeInfo(IndexKind).Enum.fields, 0..) |field, i| {
+                const index_kind: IndexKind = @enumFromInt(field.value);
                 if (selected_maybe == null and counts[i] > 0) {
-                    selected_maybe = @enumFromInt(field.value);
+                    selected_maybe = index_kind;
                 }
-                const label = try std.fmt.allocPrint(arena.allocator(), "{s} ({})", .{ field.name, counts[i] });
+                const name = switch (index_kind) {
+                    .added => "added",
+                    .not_added => "not added",
+                    .not_tracked => "not tracked",
+                };
+                const label = try std.fmt.allocPrint(arena.allocator(), "{s} ({})", .{ name, counts[i] });
                 var text_box = try wgt.TextBox(Widget).init(allocator, label, .single);
                 errdefer text_box.deinit();
                 try box.children.append(.{ .widget = .{ .text_box = text_box }, .rect = null, .visibility = null });
@@ -241,7 +247,7 @@ pub fn GitStatusTabs(comptime Widget: type) type {
                 .grid = null,
                 .box = box,
                 .arena = arena,
-                .selected = selected_maybe orelse .staged,
+                .selected = selected_maybe orelse .added,
                 .focused = false,
             };
         }
@@ -463,7 +469,7 @@ pub fn GitStatusContent(comptime Widget: type) type {
             // status diff
             var status_diff: ?*c.git_diff = null;
             switch (status.kind) {
-                .staged => {
+                .added => {
                     // head oid
                     var head_object: ?*c.git_object = null;
                     std.debug.assert(0 == c.git_revparse_single(&head_object, self.repo, "HEAD"));
@@ -483,10 +489,10 @@ pub fn GitStatusContent(comptime Widget: type) type {
 
                     std.debug.assert(0 == c.git_diff_tree_to_index(&status_diff, self.repo, commit_tree, index, null));
                 },
-                .unstaged => {
+                .not_added => {
                     std.debug.assert(0 == c.git_diff_index_to_workdir(&status_diff, self.repo, index, null));
                 },
-                .untracked => return,
+                .not_tracked => return,
             }
             defer c.git_diff_free(status_diff);
 
@@ -550,27 +556,27 @@ pub fn GitStatus(comptime Widget: type) type {
                 const status_kind: c_int = @intCast(entry.*.status);
                 if (c.GIT_STATUS_INDEX_NEW & status_kind != 0) {
                     const old_path = entry.*.head_to_index.*.old_file.path;
-                    try statuses.append(.{ .kind = .{ .staged = .added }, .path = std.mem.sliceTo(old_path, 0) });
+                    try statuses.append(.{ .kind = .{ .added = .created }, .path = std.mem.sliceTo(old_path, 0) });
                 }
                 if (c.GIT_STATUS_INDEX_MODIFIED & status_kind != 0) {
                     const old_path = entry.*.head_to_index.*.old_file.path;
-                    try statuses.append(.{ .kind = .{ .staged = .modified }, .path = std.mem.sliceTo(old_path, 0) });
+                    try statuses.append(.{ .kind = .{ .added = .modified }, .path = std.mem.sliceTo(old_path, 0) });
                 }
                 if (c.GIT_STATUS_INDEX_DELETED & status_kind != 0) {
                     const old_path = entry.*.head_to_index.*.old_file.path;
-                    try statuses.append(.{ .kind = .{ .staged = .deleted }, .path = std.mem.sliceTo(old_path, 0) });
+                    try statuses.append(.{ .kind = .{ .added = .deleted }, .path = std.mem.sliceTo(old_path, 0) });
                 }
                 if (c.GIT_STATUS_WT_NEW & status_kind != 0) {
                     const old_path = entry.*.index_to_workdir.*.old_file.path;
-                    try statuses.append(.{ .kind = .untracked, .path = std.mem.sliceTo(old_path, 0) });
+                    try statuses.append(.{ .kind = .not_tracked, .path = std.mem.sliceTo(old_path, 0) });
                 }
                 if (c.GIT_STATUS_WT_MODIFIED & status_kind != 0) {
                     const old_path = entry.*.index_to_workdir.*.old_file.path;
-                    try statuses.append(.{ .kind = .{ .unstaged = .modified }, .path = std.mem.sliceTo(old_path, 0) });
+                    try statuses.append(.{ .kind = .{ .not_added = .modified }, .path = std.mem.sliceTo(old_path, 0) });
                 }
                 if (c.GIT_STATUS_WT_DELETED & status_kind != 0) {
                     const old_path = entry.*.index_to_workdir.*.old_file.path;
-                    try statuses.append(.{ .kind = .{ .unstaged = .deleted }, .path = std.mem.sliceTo(old_path, 0) });
+                    try statuses.append(.{ .kind = .{ .not_added = .deleted }, .path = std.mem.sliceTo(old_path, 0) });
                 }
             }
 
