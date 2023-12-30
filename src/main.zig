@@ -6,7 +6,10 @@ const std = @import("std");
 const term = @import("./terminal.zig");
 const wgt = @import("./widget.zig");
 const grd = @import("./grid.zig");
-const git_wgt = @import("./git_widget.zig");
+const g_diff = @import("./git_diff.zig");
+const g_log = @import("./git_log.zig");
+const g_stat = @import("./git_status.zig");
+const g_ui = @import("./git_ui.zig");
 const Size = @import("./layout.zig").Size;
 const inp = @import("./input.zig");
 
@@ -19,17 +22,17 @@ const Widget = union(enum) {
     box: wgt.Box(Widget),
     text_box: wgt.TextBox(Widget),
     scroll: wgt.Scroll(Widget),
-    git_commit_list: git_wgt.GitCommitList(Widget),
-    git_diff: git_wgt.GitDiff(Widget),
-    git_log: git_wgt.GitLog(Widget),
-    git_status_tabs: git_wgt.GitStatusTabs(Widget),
-    git_status_list_item: git_wgt.GitStatusListItem(Widget),
-    git_status_list: git_wgt.GitStatusList(Widget),
-    git_status_content: git_wgt.GitStatusContent(Widget),
-    git_status: git_wgt.GitStatus(Widget),
-    git_ui_tabs: git_wgt.GitUITabs(Widget),
-    git_ui_stack: git_wgt.GitUIStack(Widget),
-    git_ui: git_wgt.GitUI(Widget),
+    git_diff: g_diff.GitDiff(Widget),
+    git_commit_list: g_log.GitCommitList(Widget),
+    git_log: g_log.GitLog(Widget),
+    git_status_tabs: g_stat.GitStatusTabs(Widget),
+    git_status_list_item: g_stat.GitStatusListItem(Widget),
+    git_status_list: g_stat.GitStatusList(Widget),
+    git_status_content: g_stat.GitStatusContent(Widget),
+    git_status: g_stat.GitStatus(Widget),
+    git_ui_tabs: g_ui.GitUITabs(Widget),
+    git_ui_stack: g_ui.GitUIStack(Widget),
+    git_ui: g_ui.GitUI(Widget),
 };
 
 var root: wgt.Any(Widget) = undefined;
@@ -134,7 +137,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    root = wgt.Any(Widget).init(.{ .git_ui = try git_wgt.GitUI(Widget).init(allocator, repo) });
+    root = wgt.Any(Widget).init(.{ .git_ui = try g_ui.GitUI(Widget).init(allocator, repo) });
     defer root.deinit();
 
     // init term
