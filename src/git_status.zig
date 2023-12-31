@@ -36,7 +36,6 @@ pub const Status = struct {
 
 pub fn GitStatusListItem(comptime Widget: type) type {
     return struct {
-        grid: ?grd.Grid,
         box: wgt.Box(Widget),
 
         pub fn init(allocator: std.mem.Allocator, status: Status) !GitStatusListItem(Widget) {
@@ -64,7 +63,6 @@ pub fn GitStatusListItem(comptime Widget: type) type {
             try box.children.append(.{ .widget = .{ .text_box = path_text }, .rect = null, .visibility = null });
 
             return .{
-                .grid = null,
                 .box = box,
             };
         }
@@ -76,7 +74,6 @@ pub fn GitStatusListItem(comptime Widget: type) type {
         pub fn build(self: *GitStatusListItem(Widget), constraint: layout.Constraint) !void {
             self.clear();
             try self.box.build(constraint);
-            self.grid = self.box.grid;
         }
 
         pub fn input(self: *GitStatusListItem(Widget), key: inp.Key) !void {
@@ -85,7 +82,11 @@ pub fn GitStatusListItem(comptime Widget: type) type {
         }
 
         pub fn clear(self: *GitStatusListItem(Widget)) void {
-            self.grid = null;
+            self.box.clear();
+        }
+
+        pub fn getGrid(self: GitStatusListItem(Widget)) ?grd.Grid {
+            return self.box.getGrid();
         }
 
         pub fn setBorder(self: *GitStatusListItem(Widget), border_style: ?wgt.Box(Widget).BorderStyle) void {
@@ -96,7 +97,6 @@ pub fn GitStatusListItem(comptime Widget: type) type {
 
 pub fn GitStatusList(comptime Widget: type) type {
     return struct {
-        grid: ?grd.Grid,
         scroll: wgt.Scroll(Widget),
         statuses: []Status,
         selected: usize = 0,
@@ -117,7 +117,6 @@ pub fn GitStatusList(comptime Widget: type) type {
             errdefer scroll.deinit();
 
             return .{
-                .grid = null,
                 .scroll = scroll,
                 .statuses = statuses,
                 .selected = 0,
@@ -138,7 +137,6 @@ pub fn GitStatusList(comptime Widget: type) type {
                     .hidden);
             }
             try self.scroll.build(constraint);
-            self.grid = self.scroll.grid;
         }
 
         pub fn input(self: *GitStatusList(Widget), key: inp.Key) !void {
@@ -164,14 +162,14 @@ pub fn GitStatusList(comptime Widget: type) type {
                     }
                 },
                 .page_up => {
-                    if (self.grid) |grid| {
+                    if (self.getGrid()) |grid| {
                         const half_count = (grid.size.height / 3) / 2;
                         self.selected -|= half_count;
                         self.updateScroll();
                     }
                 },
                 .page_down => {
-                    if (self.grid) |grid| {
+                    if (self.getGrid()) |grid| {
                         if (self.statuses.len > 0) {
                             const half_count = (grid.size.height / 3) / 2;
                             self.selected = @min(self.selected + half_count, self.statuses.len - 1);
@@ -184,7 +182,11 @@ pub fn GitStatusList(comptime Widget: type) type {
         }
 
         pub fn clear(self: *GitStatusList(Widget)) void {
-            self.grid = null;
+            self.scroll.clear();
+        }
+
+        pub fn getGrid(self: GitStatusList(Widget)) ?grd.Grid {
+            return self.scroll.getGrid();
         }
 
         fn updateScroll(self: *GitStatusList(Widget)) void {
@@ -200,7 +202,6 @@ pub fn GitStatusList(comptime Widget: type) type {
 
 pub fn GitStatusTabs(comptime Widget: type) type {
     return struct {
-        grid: ?grd.Grid,
         box: wgt.Box(Widget),
         arena: std.heap.ArenaAllocator,
         selected: IndexKind,
@@ -239,7 +240,6 @@ pub fn GitStatusTabs(comptime Widget: type) type {
             }
 
             return .{
-                .grid = null,
                 .box = box,
                 .arena = arena,
                 .selected = selected_maybe orelse .added,
@@ -261,7 +261,6 @@ pub fn GitStatusTabs(comptime Widget: type) type {
                     .hidden;
             }
             try self.box.build(constraint);
-            self.grid = self.box.grid;
         }
 
         pub fn input(self: *GitStatusTabs(Widget), key: inp.Key) !void {
@@ -279,14 +278,17 @@ pub fn GitStatusTabs(comptime Widget: type) type {
         }
 
         pub fn clear(self: *GitStatusTabs(Widget)) void {
-            self.grid = null;
+            self.box.clear();
+        }
+
+        pub fn getGrid(self: GitStatusTabs(Widget)) ?grd.Grid {
+            return self.box.getGrid();
         }
     };
 }
 
 pub fn GitStatusContent(comptime Widget: type) type {
     return struct {
-        grid: ?grd.Grid,
         box: wgt.Box(Widget),
         filtered_statuses: std.ArrayList(Status),
         repo: ?*c.git_repository,
@@ -322,7 +324,6 @@ pub fn GitStatusContent(comptime Widget: type) type {
             }
 
             var status_content = GitStatusContent(Widget){
-                .grid = null,
                 .box = box,
                 .filtered_statuses = filtered_statuses,
                 .repo = repo,
@@ -346,7 +347,6 @@ pub fn GitStatusContent(comptime Widget: type) type {
             diff.focused = self.focused and self.selected == .diff;
             if (self.filtered_statuses.items.len > 0) {
                 try self.box.build(constraint);
-                self.grid = self.box.grid;
             }
         }
 
@@ -410,13 +410,17 @@ pub fn GitStatusContent(comptime Widget: type) type {
                 else => {},
             }
 
-            if (self.selected == .diff and self.box.children.items[1].widget.git_diff.grid == null) {
+            if (self.selected == .diff and self.box.children.items[1].widget.git_diff.getGrid() == null) {
                 self.selected = .status_list;
             }
         }
 
         pub fn clear(self: *GitStatusContent(Widget)) void {
-            self.grid = null;
+            self.box.clear();
+        }
+
+        pub fn getGrid(self: GitStatusContent(Widget)) ?grd.Grid {
+            return self.box.getGrid();
         }
 
         pub fn scrolledToTop(self: GitStatusContent(Widget)) bool {
@@ -512,7 +516,6 @@ pub fn GitStatusContent(comptime Widget: type) type {
 
 pub fn GitStatus(comptime Widget: type) type {
     return struct {
-        grid: ?grd.Grid,
         box: wgt.Box(Widget),
         status_list: *c.git_status_list,
         statuses: std.ArrayList(Status),
@@ -588,7 +591,6 @@ pub fn GitStatus(comptime Widget: type) type {
             }
 
             return GitStatus(Widget){
-                .grid = null,
                 .box = box,
                 .statuses = statuses,
                 .status_list = status_list.?,
@@ -611,7 +613,6 @@ pub fn GitStatus(comptime Widget: type) type {
             stack.focused = self.focused and self.selected == .status_content;
             stack.selected = @intFromEnum(status_tabs.selected);
             try self.box.build(constraint);
-            self.grid = self.box.grid;
         }
 
         pub fn input(self: *GitStatus(Widget), key: inp.Key) !void {
@@ -634,13 +635,17 @@ pub fn GitStatus(comptime Widget: type) type {
                 },
             }
 
-            if (self.selected == .status_content and self.box.children.items[1].widget.git_ui_stack.getSelected().git_status_content.grid == null) {
+            if (self.selected == .status_content and self.box.children.items[1].widget.git_ui_stack.getSelected().git_status_content.getGrid() == null) {
                 self.selected = .status_tabs;
             }
         }
 
         pub fn clear(self: *GitStatus(Widget)) void {
-            self.grid = null;
+            self.box.clear();
+        }
+
+        pub fn getGrid(self: GitStatus(Widget)) ?grd.Grid {
+            return self.box.getGrid();
         }
     };
 }

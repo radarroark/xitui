@@ -52,15 +52,15 @@ const Widget = union(enum) {
         }
     }
 
-    pub fn grid(self: *Widget) ?grd.Grid {
-        switch (self.*) {
-            inline else => |*case| return case.grid,
-        }
-    }
-
     pub fn clear(self: *Widget) void {
         switch (self.*) {
             inline else => |*case| case.clear(),
+        }
+    }
+
+    pub fn getGrid(self: Widget) ?grd.Grid {
+        switch (self) {
+            inline else => |*case| return case.getGrid(),
         }
     }
 };
@@ -77,7 +77,7 @@ fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *l
         var force_refresh = false;
         if (last_size.*.width != root_size.width or last_size.*.height != root_size.height) {
             force_refresh = true;
-        } else if (root.grid()) |grid| {
+        } else if (root.getGrid()) |grid| {
             if (last_grid.size.width != grid.size.width or last_grid.size.height != grid.size.height) {
                 force_refresh = true;
             }
@@ -89,7 +89,7 @@ fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *l
     }
 
     if (last_grid_maybe.*) |last_grid| {
-        if (root.grid()) |grid| {
+        if (root.getGrid()) |grid| {
             // clear cells that are in last grid but not current grid
             for (0..last_grid.size.height) |y| {
                 for (0..last_grid.size.width) |x| {
@@ -115,7 +115,7 @@ fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *l
         try term.clearRect(term.terminal.tty.writer(), 0, 0, root_size);
         last_size.* = root_size;
 
-        if (root.grid()) |grid| {
+        if (root.getGrid()) |grid| {
             last_grid_maybe.* = try grd.Grid.initFromGrid(allocator, grid, grid.size, 0, 0);
             for (0..grid.size.height) |y| {
                 for (0..grid.size.width) |x| {

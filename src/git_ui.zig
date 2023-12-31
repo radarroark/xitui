@@ -12,7 +12,6 @@ const c = @cImport({
 
 pub fn GitUITabs(comptime Widget: type) type {
     return struct {
-        grid: ?grd.Grid,
         box: wgt.Box(Widget),
         selected: usize,
         focused: bool,
@@ -34,7 +33,6 @@ pub fn GitUITabs(comptime Widget: type) type {
             }
 
             return .{
-                .grid = null,
                 .box = box,
                 .selected = 0,
                 .focused = false,
@@ -54,7 +52,6 @@ pub fn GitUITabs(comptime Widget: type) type {
                     .hidden;
             }
             try self.box.build(constraint);
-            self.grid = self.box.grid;
         }
 
         pub fn input(self: *GitUITabs(Widget), key: inp.Key) !void {
@@ -72,21 +69,23 @@ pub fn GitUITabs(comptime Widget: type) type {
         }
 
         pub fn clear(self: *GitUITabs(Widget)) void {
-            self.grid = null;
+            self.box.clear();
+        }
+
+        pub fn getGrid(self: GitUITabs(Widget)) ?grd.Grid {
+            return self.box.getGrid();
         }
     };
 }
 
 pub fn GitUIStack(comptime Widget: type) type {
     return struct {
-        grid: ?grd.Grid,
         children: std.ArrayList(Widget),
         selected: usize,
         focused: bool,
 
         pub fn init(allocator: std.mem.Allocator) GitUIStack(Widget) {
             return .{
-                .grid = null,
                 .children = std.ArrayList(Widget).init(allocator),
                 .selected = 0,
                 .focused = false,
@@ -111,17 +110,20 @@ pub fn GitUIStack(comptime Widget: type) type {
                     },
                 }
             }
-            var widget = &self.children.items[self.selected];
+            const widget = self.getSelected();
             try widget.build(constraint);
-            self.grid = widget.grid();
         }
 
         pub fn input(self: *GitUIStack(Widget), key: inp.Key) !void {
-            try self.children.items[self.selected].input(key);
+            try self.getSelected().input(key);
         }
 
         pub fn clear(self: *GitUIStack(Widget)) void {
-            self.grid = null;
+            self.getSelected().clear();
+        }
+
+        pub fn getGrid(self: GitUIStack(Widget)) ?grd.Grid {
+            return self.getSelected().getGrid();
         }
 
         pub fn getSelected(self: GitUIStack(Widget)) *Widget {
@@ -132,7 +134,6 @@ pub fn GitUIStack(comptime Widget: type) type {
 
 pub fn GitUI(comptime Widget: type) type {
     return struct {
-        grid: ?grd.Grid,
         box: wgt.Box(Widget),
         selected: union(enum) { tabs, stack },
 
@@ -168,7 +169,6 @@ pub fn GitUI(comptime Widget: type) type {
             }
 
             return .{
-                .grid = null,
                 .box = box,
                 .selected = .stack,
             };
@@ -186,7 +186,6 @@ pub fn GitUI(comptime Widget: type) type {
             git_ui_stack.focused = self.selected == .stack;
             git_ui_stack.selected = git_ui_tabs.selected;
             try self.box.build(constraint);
-            self.grid = self.box.grid;
         }
 
         pub fn input(self: *GitUI(Widget), key: inp.Key) !void {
@@ -242,7 +241,11 @@ pub fn GitUI(comptime Widget: type) type {
         }
 
         pub fn clear(self: *GitUI(Widget)) void {
-            self.grid = null;
+            self.box.clear();
+        }
+
+        pub fn getGrid(self: GitUI(Widget)) ?grd.Grid {
+            return self.box.getGrid();
         }
     };
 }

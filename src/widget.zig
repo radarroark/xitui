@@ -52,6 +52,10 @@ pub fn Text(comptime Widget: type) type {
                 self.grid = null;
             }
         }
+
+        pub fn getGrid(self: Text(Widget)) ?grd.Grid {
+            return self.grid;
+        }
     };
 }
 
@@ -204,7 +208,7 @@ pub fn Box(comptime Widget: type) type {
                     .max_size = .{ .width = expected_remaining_width_maybe, .height = expected_remaining_height_maybe },
                 });
 
-                if (child.widget.grid()) |child_grid| {
+                if (child.widget.getGrid()) |child_grid| {
                     switch (self.direction) {
                         .vert => {
                             if (remaining_height_maybe) |*remaining_height| remaining_height.* -|= child_grid.size.height;
@@ -232,7 +236,7 @@ pub fn Box(comptime Widget: type) type {
                 .vert => {
                     var line: usize = 0;
                     for (self.children.items) |*child| {
-                        if (child.widget.grid()) |child_grid| {
+                        if (child.widget.getGrid()) |child_grid| {
                             child.rect = .{ .x = 0, .y = @as(isize, @intCast(line + border_size)), .size = child_grid.size };
                             for (0..child_grid.size.height) |y| {
                                 for (0..child_grid.size.width) |x| {
@@ -251,7 +255,7 @@ pub fn Box(comptime Widget: type) type {
                 .horiz => {
                     var col: usize = 0;
                     for (self.children.items) |*child| {
-                        if (child.widget.grid()) |child_grid| {
+                        if (child.widget.getGrid()) |child_grid| {
                             child.rect = .{ .x = @as(isize, @intCast(col + border_size)), .y = 0, .size = child_grid.size };
                             for (0..child_grid.size.width) |x| {
                                 for (0..child_grid.size.height) |y| {
@@ -334,13 +338,16 @@ pub fn Box(comptime Widget: type) type {
                 self.grid = null;
             }
         }
+
+        pub fn getGrid(self: Box(Widget)) ?grd.Grid {
+            return self.grid;
+        }
     };
 }
 
 pub fn TextBox(comptime Widget: type) type {
     return struct {
         allocator: std.mem.Allocator,
-        grid: ?grd.Grid,
         box: Box(Widget),
         border_style: ?Box(Widget).BorderStyle,
         lines: std.ArrayList(std.ArrayList(u8)),
@@ -380,7 +387,6 @@ pub fn TextBox(comptime Widget: type) type {
 
             return .{
                 .allocator = allocator,
-                .grid = null,
                 .box = box,
                 .border_style = border_style,
                 .lines = lines,
@@ -399,7 +405,6 @@ pub fn TextBox(comptime Widget: type) type {
             self.clear();
             self.box.border_style = self.border_style;
             try self.box.build(constraint);
-            self.grid = self.box.grid;
         }
 
         pub fn input(self: *TextBox(Widget), key: inp.Key) !void {
@@ -407,7 +412,11 @@ pub fn TextBox(comptime Widget: type) type {
         }
 
         pub fn clear(self: *TextBox(Widget)) void {
-            self.grid = null;
+            self.box.clear();
+        }
+
+        pub fn getGrid(self: TextBox(Widget)) ?grd.Grid {
+            return self.box.getGrid();
         }
     };
 }
@@ -467,7 +476,7 @@ pub fn Scroll(comptime Widget: type) type {
                 },
             };
             try self.child.build(child_constraint);
-            if (self.child.grid()) |child_grid| {
+            if (self.child.getGrid()) |child_grid| {
                 self.grid = try grd.Grid.initFromGrid(self.allocator, child_grid, .{
                     .width = @max(1, @min(child_grid.size.width, constraint.max_size.width orelse child_grid.size.width)),
                     .height = @max(1, @min(child_grid.size.height, constraint.max_size.height orelse child_grid.size.height)),
@@ -484,6 +493,10 @@ pub fn Scroll(comptime Widget: type) type {
                 grid.deinit();
                 self.grid = null;
             }
+        }
+
+        pub fn getGrid(self: Scroll(Widget)) ?grd.Grid {
+            return self.grid;
         }
 
         pub fn scrollToRect(self: *Scroll(Widget), rect: layout.Rect) void {

@@ -10,7 +10,6 @@ const c = @cImport({
 
 pub fn GitDiff(comptime Widget: type) type {
     return struct {
-        grid: ?grd.Grid,
         box: wgt.Box(Widget),
         allocator: std.mem.Allocator,
         repo: ?*c.git_repository,
@@ -29,7 +28,6 @@ pub fn GitDiff(comptime Widget: type) type {
             try outer_box.children.append(.{ .widget = .{ .scroll = scroll }, .rect = null, .visibility = null });
 
             return .{
-                .grid = null,
                 .box = outer_box,
                 .allocator = allocator,
                 .repo = repo,
@@ -51,7 +49,6 @@ pub fn GitDiff(comptime Widget: type) type {
             self.box.border_style = if (self.focused) .double else .single;
             if (self.bufs.items.len > 0) {
                 try self.box.build(constraint);
-                self.grid = self.box.grid;
             }
         }
 
@@ -131,7 +128,11 @@ pub fn GitDiff(comptime Widget: type) type {
         }
 
         pub fn clear(self: *GitDiff(Widget)) void {
-            self.grid = null;
+            self.box.clear();
+        }
+
+        pub fn getGrid(self: GitDiff(Widget)) ?grd.Grid {
+            return self.box.getGrid();
         }
 
         pub fn clearDiffs(self: *GitDiff(Widget)) !void {

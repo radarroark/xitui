@@ -11,7 +11,6 @@ const c = @cImport({
 
 pub fn GitCommitList(comptime Widget: type) type {
     return struct {
-        grid: ?grd.Grid,
         scroll: wgt.Scroll(Widget),
         repo: ?*c.git_repository,
         commits: std.ArrayList(?*c.git_commit),
@@ -53,7 +52,6 @@ pub fn GitCommitList(comptime Widget: type) type {
             errdefer scroll.deinit();
 
             return .{
-                .grid = null,
                 .scroll = scroll,
                 .repo = repo,
                 .commits = commits,
@@ -79,7 +77,6 @@ pub fn GitCommitList(comptime Widget: type) type {
                     .hidden;
             }
             try self.scroll.build(constraint);
-            self.grid = self.scroll.grid;
         }
 
         pub fn input(self: *GitCommitList(Widget), key: inp.Key) !void {
@@ -105,14 +102,14 @@ pub fn GitCommitList(comptime Widget: type) type {
                     }
                 },
                 .page_up => {
-                    if (self.grid) |grid| {
+                    if (self.getGrid()) |grid| {
                         const half_count = (grid.size.height / 3) / 2;
                         self.selected -|= half_count;
                         self.updateScroll();
                     }
                 },
                 .page_down => {
-                    if (self.grid) |grid| {
+                    if (self.getGrid()) |grid| {
                         if (self.commits.items.len > 0) {
                             const half_count = (grid.size.height / 3) / 2;
                             self.selected = @min(self.selected + half_count, self.commits.items.len - 1);
@@ -125,7 +122,11 @@ pub fn GitCommitList(comptime Widget: type) type {
         }
 
         pub fn clear(self: *GitCommitList(Widget)) void {
-            self.grid = null;
+            self.scroll.clear();
+        }
+
+        pub fn getGrid(self: GitCommitList(Widget)) ?grd.Grid {
+            return self.scroll.getGrid();
         }
 
         fn updateScroll(self: *GitCommitList(Widget)) void {
@@ -141,7 +142,6 @@ pub fn GitCommitList(comptime Widget: type) type {
 
 pub fn GitLog(comptime Widget: type) type {
     return struct {
-        grid: ?grd.Grid,
         box: wgt.Box(Widget),
         repo: ?*c.git_repository,
         selected: union(enum) { commit_list, diff },
@@ -166,7 +166,6 @@ pub fn GitLog(comptime Widget: type) type {
             }
 
             var git_log = GitLog(Widget){
-                .grid = null,
                 .box = box,
                 .repo = repo,
                 .selected = .commit_list,
@@ -198,7 +197,6 @@ pub fn GitLog(comptime Widget: type) type {
                 },
             }
             try self.box.build(constraint);
-            self.grid = self.box.grid;
         }
 
         pub fn input(self: *GitLog(Widget), key: inp.Key) !void {
@@ -263,7 +261,11 @@ pub fn GitLog(comptime Widget: type) type {
         }
 
         pub fn clear(self: *GitLog(Widget)) void {
-            self.grid = null;
+            self.box.clear();
+        }
+
+        pub fn getGrid(self: GitLog(Widget)) ?grd.Grid {
+            return self.box.getGrid();
         }
 
         pub fn scrolledToTop(self: GitLog(Widget)) bool {
