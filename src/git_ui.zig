@@ -44,7 +44,7 @@ pub fn GitUITabs(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitUITabs(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             for (self.box.children.items, 0..) |*tab, i| {
                 tab.widget.text_box.border_style = if (self.selected == i)
                     (if (self.focused) .double else .single)
@@ -68,8 +68,8 @@ pub fn GitUITabs(comptime Widget: type) type {
             }
         }
 
-        pub fn clear(self: *GitUITabs(Widget)) void {
-            self.box.clear();
+        pub fn clearGrid(self: *GitUITabs(Widget)) void {
+            self.box.clearGrid();
         }
 
         pub fn getGrid(self: GitUITabs(Widget)) ?grd.Grid {
@@ -100,7 +100,7 @@ pub fn GitUIStack(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitUIStack(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             for (self.children.items, 0..) |*child, i| {
                 switch (child.*) {
                     inline else => |*case| {
@@ -118,8 +118,8 @@ pub fn GitUIStack(comptime Widget: type) type {
             try self.getSelected().input(key);
         }
 
-        pub fn clear(self: *GitUIStack(Widget)) void {
-            self.getSelected().clear();
+        pub fn clearGrid(self: *GitUIStack(Widget)) void {
+            self.getSelected().clearGrid();
         }
 
         pub fn getGrid(self: GitUIStack(Widget)) ?grd.Grid {
@@ -179,7 +179,7 @@ pub fn GitUI(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitUI(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             var git_ui_tabs = &self.box.children.items[0].widget.git_ui_tabs;
             git_ui_tabs.focused = self.selected == .tabs;
             var git_ui_stack = &self.box.children.items[1].widget.git_ui_stack;
@@ -240,8 +240,8 @@ pub fn GitUI(comptime Widget: type) type {
             }
         }
 
-        pub fn clear(self: *GitUI(Widget)) void {
-            self.box.clear();
+        pub fn clearGrid(self: *GitUI(Widget)) void {
+            self.box.clearGrid();
         }
 
         pub fn getGrid(self: GitUI(Widget)) ?grd.Grid {

@@ -25,7 +25,7 @@ pub fn Text(comptime Widget: type) type {
         }
 
         pub fn build(self: *Text(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             const width = try std.unicode.utf8CountCodepoints(self.content);
             var grid = try grd.Grid.init(self.allocator, .{ .width = @max(1, @min(width, constraint.max_size.width orelse width)), .height = 1 });
             errdefer grid.deinit();
@@ -46,7 +46,7 @@ pub fn Text(comptime Widget: type) type {
             _ = key;
         }
 
-        pub fn clear(self: *Text(Widget)) void {
+        pub fn clearGrid(self: *Text(Widget)) void {
             if (self.grid) |*grid| {
                 grid.deinit();
                 self.grid = null;
@@ -109,7 +109,7 @@ pub fn Box(comptime Widget: type) type {
         }
 
         pub fn build(self: *Box(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
 
             const border_size: usize = if (self.border_style) |_| 1 else 0;
             if (constraint.max_size.width) |max_width| {
@@ -146,7 +146,7 @@ pub fn Box(comptime Widget: type) type {
 
             for (sorted_children.keys(), 0..) |child_index, sorted_child_index| {
                 var child = &self.children.items[child_index];
-                child.widget.clear();
+                child.widget.clearGrid();
 
                 if (remaining_width_maybe) |remaining_width| {
                     if (remaining_width <= 0) continue;
@@ -332,7 +332,7 @@ pub fn Box(comptime Widget: type) type {
             }
         }
 
-        pub fn clear(self: *Box(Widget)) void {
+        pub fn clearGrid(self: *Box(Widget)) void {
             if (self.grid) |*grid| {
                 grid.deinit();
                 self.grid = null;
@@ -402,7 +402,7 @@ pub fn TextBox(comptime Widget: type) type {
         }
 
         pub fn build(self: *TextBox(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             self.box.border_style = self.border_style;
             try self.box.build(constraint);
         }
@@ -411,8 +411,8 @@ pub fn TextBox(comptime Widget: type) type {
             try self.box.input(key);
         }
 
-        pub fn clear(self: *TextBox(Widget)) void {
-            self.box.clear();
+        pub fn clearGrid(self: *TextBox(Widget)) void {
+            self.box.clearGrid();
         }
 
         pub fn getGrid(self: TextBox(Widget)) ?grd.Grid {
@@ -460,7 +460,7 @@ pub fn Scroll(comptime Widget: type) type {
         }
 
         pub fn build(self: *Scroll(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             const child_constraint: layout.Constraint = switch (self.direction) {
                 .vert => .{
                     .min_size = constraint.min_size,
@@ -488,7 +488,7 @@ pub fn Scroll(comptime Widget: type) type {
             try self.child.input(key);
         }
 
-        pub fn clear(self: *Scroll(Widget)) void {
+        pub fn clearGrid(self: *Scroll(Widget)) void {
             if (self.grid) |*grid| {
                 grid.deinit();
                 self.grid = null;

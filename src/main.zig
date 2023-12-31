@@ -52,9 +52,9 @@ const Widget = union(enum) {
         }
     }
 
-    pub fn clear(self: *Widget) void {
+    pub fn clearGrid(self: *Widget) void {
         switch (self.*) {
-            inline else => |*case| case.clear(),
+            inline else => |*case| case.clearGrid(),
         }
     }
 

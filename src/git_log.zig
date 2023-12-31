@@ -69,7 +69,7 @@ pub fn GitCommitList(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitCommitList(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             for (self.scroll.child.box.children.items, 0..) |*commit, i| {
                 commit.widget.text_box.border_style = if (self.selected == i)
                     (if (self.focused) .double else .single)
@@ -121,8 +121,8 @@ pub fn GitCommitList(comptime Widget: type) type {
             }
         }
 
-        pub fn clear(self: *GitCommitList(Widget)) void {
-            self.scroll.clear();
+        pub fn clearGrid(self: *GitCommitList(Widget)) void {
+            self.scroll.clearGrid();
         }
 
         pub fn getGrid(self: GitCommitList(Widget)) ?grd.Grid {
@@ -181,7 +181,7 @@ pub fn GitLog(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitLog(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             switch (self.selected) {
                 .commit_list => {
                     var commit_list = &self.box.children.items[0].widget.git_commit_list;
@@ -260,8 +260,8 @@ pub fn GitLog(comptime Widget: type) type {
             }
         }
 
-        pub fn clear(self: *GitLog(Widget)) void {
-            self.box.clear();
+        pub fn clearGrid(self: *GitLog(Widget)) void {
+            self.box.clearGrid();
         }
 
         pub fn getGrid(self: GitLog(Widget)) ?grd.Grid {

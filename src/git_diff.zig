@@ -45,7 +45,7 @@ pub fn GitDiff(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitDiff(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             self.box.border_style = if (self.focused) .double else .single;
             if (self.bufs.items.len > 0) {
                 try self.box.build(constraint);
@@ -127,8 +127,8 @@ pub fn GitDiff(comptime Widget: type) type {
             }
         }
 
-        pub fn clear(self: *GitDiff(Widget)) void {
-            self.box.clear();
+        pub fn clearGrid(self: *GitDiff(Widget)) void {
+            self.box.clearGrid();
         }
 
         pub fn getGrid(self: GitDiff(Widget)) ?grd.Grid {

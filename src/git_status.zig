@@ -72,7 +72,7 @@ pub fn GitStatusListItem(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitStatusListItem(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             try self.box.build(constraint);
         }
 
@@ -81,8 +81,8 @@ pub fn GitStatusListItem(comptime Widget: type) type {
             _ = key;
         }
 
-        pub fn clear(self: *GitStatusListItem(Widget)) void {
-            self.box.clear();
+        pub fn clearGrid(self: *GitStatusListItem(Widget)) void {
+            self.box.clearGrid();
         }
 
         pub fn getGrid(self: GitStatusListItem(Widget)) ?grd.Grid {
@@ -129,7 +129,7 @@ pub fn GitStatusList(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitStatusList(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             for (self.scroll.child.box.children.items, 0..) |*item, i| {
                 item.widget.git_status_list_item.setBorder(if (self.selected == i)
                     (if (self.focused) .double else .single)
@@ -181,8 +181,8 @@ pub fn GitStatusList(comptime Widget: type) type {
             }
         }
 
-        pub fn clear(self: *GitStatusList(Widget)) void {
-            self.scroll.clear();
+        pub fn clearGrid(self: *GitStatusList(Widget)) void {
+            self.scroll.clearGrid();
         }
 
         pub fn getGrid(self: GitStatusList(Widget)) ?grd.Grid {
@@ -253,7 +253,7 @@ pub fn GitStatusTabs(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitStatusTabs(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             for (self.box.children.items, 0..) |*tab, i| {
                 tab.widget.text_box.border_style = if (@intFromEnum(self.selected) == i)
                     (if (self.focused) .double else .single)
@@ -277,8 +277,8 @@ pub fn GitStatusTabs(comptime Widget: type) type {
             }
         }
 
-        pub fn clear(self: *GitStatusTabs(Widget)) void {
-            self.box.clear();
+        pub fn clearGrid(self: *GitStatusTabs(Widget)) void {
+            self.box.clearGrid();
         }
 
         pub fn getGrid(self: GitStatusTabs(Widget)) ?grd.Grid {
@@ -340,7 +340,7 @@ pub fn GitStatusContent(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitStatusContent(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             var status_list = &self.box.children.items[0].widget.git_status_list;
             status_list.focused = self.focused and self.selected == .status_list;
             var diff = &self.box.children.items[1].widget.git_diff;
@@ -415,8 +415,8 @@ pub fn GitStatusContent(comptime Widget: type) type {
             }
         }
 
-        pub fn clear(self: *GitStatusContent(Widget)) void {
-            self.box.clear();
+        pub fn clearGrid(self: *GitStatusContent(Widget)) void {
+            self.box.clearGrid();
         }
 
         pub fn getGrid(self: GitStatusContent(Widget)) ?grd.Grid {
@@ -606,7 +606,7 @@ pub fn GitStatus(comptime Widget: type) type {
         }
 
         pub fn build(self: *GitStatus(Widget), constraint: layout.Constraint) !void {
-            self.clear();
+            self.clearGrid();
             var status_tabs = &self.box.children.items[0].widget.git_status_tabs;
             status_tabs.focused = self.focused and self.selected == .status_tabs;
             var stack = &self.box.children.items[1].widget.git_ui_stack;
@@ -640,8 +640,8 @@ pub fn GitStatus(comptime Widget: type) type {
             }
         }
 
-        pub fn clear(self: *GitStatus(Widget)) void {
-            self.box.clear();
+        pub fn clearGrid(self: *GitStatus(Widget)) void {
+            self.box.clearGrid();
         }
 
         pub fn getGrid(self: GitStatus(Widget)) ?grd.Grid {
