@@ -65,9 +65,7 @@ const Widget = union(enum) {
     }
 };
 
-var root: Widget = undefined;
-
-fn tick(allocator: std.mem.Allocator, last_grid_maybe: *?grd.Grid, last_size: *layout.Size) !void {
+fn tick(allocator: std.mem.Allocator, root: *Widget, last_grid_maybe: *?grd.Grid, last_size: *layout.Size) !void {
     const root_size = layout.Size{ .width = term.terminal.size.width, .height = term.terminal.size.height };
     if (root_size.width == 0 or root_size.height == 0) {
         return;
@@ -167,7 +165,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    root = .{ .git_ui = try g_ui.GitUI(Widget).init(allocator, repo) };
+    var root = Widget{ .git_ui = try g_ui.GitUI(Widget).init(allocator, repo) };
     defer root.deinit();
 
     // init term
@@ -180,7 +178,7 @@ pub fn main() !void {
     var last_size = layout.Size{ .width = 0, .height = 0 };
 
     while (true) {
-        tick(allocator, &last_grid_maybe, &last_size) catch |err| {
+        tick(allocator, &root, &last_grid_maybe, &last_size) catch |err| {
             switch (err) {
                 error.TerminalQuit => break,
                 else => return err,
