@@ -47,6 +47,12 @@ pub fn GitUITabs(comptime Widget: type) type {
 
         pub fn build(self: *GitUITabs(Widget), constraint: layout.Constraint) !void {
             self.clear();
+            for (self.box.children.items, 0..) |*tab, i| {
+                tab.widget.text_box.border_style = if (self.selected == i)
+                    (if (self.focused) .double else .single)
+                else
+                    .hidden;
+            }
             try self.box.build(constraint);
             self.grid = self.box.grid;
         }
@@ -67,15 +73,6 @@ pub fn GitUITabs(comptime Widget: type) type {
 
         pub fn clear(self: *GitUITabs(Widget)) void {
             self.grid = null;
-        }
-
-        pub fn refresh(self: *GitUITabs(Widget)) void {
-            for (self.box.children.items, 0..) |*tab, i| {
-                tab.widget.text_box.border_style = if (self.selected == i)
-                    (if (self.focused) .double else .single)
-                else
-                    .hidden;
-            }
         }
     };
 }
@@ -105,6 +102,15 @@ pub fn GitUIStack(comptime Widget: type) type {
 
         pub fn build(self: *GitUIStack(Widget), constraint: layout.Constraint) !void {
             self.clear();
+            for (self.children.items, 0..) |*child, i| {
+                switch (child.*) {
+                    inline else => |*case| {
+                        if (@hasField(@TypeOf(case.*), "focused")) {
+                            case.focused = self.focused and i == self.selected;
+                        }
+                    },
+                }
+            }
             var widget = &self.children.items[self.selected];
             try widget.build(constraint);
             self.grid = widget.grid();
@@ -116,19 +122,6 @@ pub fn GitUIStack(comptime Widget: type) type {
 
         pub fn clear(self: *GitUIStack(Widget)) void {
             self.grid = null;
-        }
-
-        pub fn refresh(self: *GitUIStack(Widget)) void {
-            for (self.children.items, 0..) |*child, i| {
-                switch (child.*) {
-                    inline else => |*case| {
-                        if (@hasField(@TypeOf(case.*), "focused") and @hasDecl(@TypeOf(case.*), "refresh")) {
-                            case.focused = self.focused and i == self.selected;
-                            case.refresh();
-                        }
-                    },
-                }
-            }
         }
 
         pub fn getSelected(self: GitUIStack(Widget)) *Widget {
@@ -161,7 +154,6 @@ pub fn GitUI(comptime Widget: type) type {
                     var git_log = try g_log.GitLog(Widget).init(allocator, repo);
                     errdefer git_log.deinit();
                     git_log.focused = true;
-                    git_log.refresh();
                     try stack.children.append(.{ .git_log = git_log });
                 }
 
@@ -169,7 +161,6 @@ pub fn GitUI(comptime Widget: type) type {
                     var git_status = try g_stat.GitStatus(Widget).init(allocator, repo);
                     errdefer git_status.deinit();
                     git_status.focused = false;
-                    git_status.refresh();
                     try stack.children.append(.{ .git_status = git_status });
                 }
 
@@ -189,6 +180,11 @@ pub fn GitUI(comptime Widget: type) type {
 
         pub fn build(self: *GitUI(Widget), constraint: layout.Constraint) !void {
             self.clear();
+            var git_ui_tabs = &self.box.children.items[0].widget.git_ui_tabs;
+            git_ui_tabs.focused = self.selected == .tabs;
+            var git_ui_stack = &self.box.children.items[1].widget.git_ui_stack;
+            git_ui_stack.focused = self.selected == .stack;
+            git_ui_stack.selected = git_ui_tabs.selected;
             try self.box.build(constraint);
             self.grid = self.box.grid;
         }
@@ -243,22 +239,10 @@ pub fn GitUI(comptime Widget: type) type {
                     }
                 },
             }
-
-            self.refresh();
         }
 
         pub fn clear(self: *GitUI(Widget)) void {
             self.grid = null;
-        }
-
-        pub fn refresh(self: *GitUI(Widget)) void {
-            var git_ui_tabs = &self.box.children.items[0].widget.git_ui_tabs;
-            git_ui_tabs.focused = self.selected == .tabs;
-            git_ui_tabs.refresh();
-            var git_ui_stack = &self.box.children.items[1].widget.git_ui_stack;
-            git_ui_stack.focused = self.selected == .stack;
-            git_ui_stack.selected = git_ui_tabs.selected;
-            git_ui_stack.refresh();
         }
     };
 }

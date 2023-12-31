@@ -131,6 +131,12 @@ pub fn GitStatusList(comptime Widget: type) type {
 
         pub fn build(self: *GitStatusList(Widget), constraint: layout.Constraint) !void {
             self.clear();
+            for (self.scroll.child.box.children.items, 0..) |*item, i| {
+                item.widget.git_status_list_item.setBorder(if (self.selected == i)
+                    (if (self.focused) .double else .single)
+                else
+                    .hidden);
+            }
             try self.scroll.build(constraint);
             self.grid = self.scroll.grid;
         }
@@ -175,21 +181,10 @@ pub fn GitStatusList(comptime Widget: type) type {
                 },
                 else => {},
             }
-
-            self.refresh();
         }
 
         pub fn clear(self: *GitStatusList(Widget)) void {
             self.grid = null;
-        }
-
-        pub fn refresh(self: *GitStatusList(Widget)) void {
-            for (self.scroll.child.box.children.items, 0..) |*item, i| {
-                item.widget.git_status_list_item.setBorder(if (self.selected == i)
-                    (if (self.focused) .double else .single)
-                else
-                    .hidden);
-            }
         }
 
         fn updateScroll(self: *GitStatusList(Widget)) void {
@@ -259,6 +254,12 @@ pub fn GitStatusTabs(comptime Widget: type) type {
 
         pub fn build(self: *GitStatusTabs(Widget), constraint: layout.Constraint) !void {
             self.clear();
+            for (self.box.children.items, 0..) |*tab, i| {
+                tab.widget.text_box.border_style = if (@intFromEnum(self.selected) == i)
+                    (if (self.focused) .double else .single)
+                else
+                    .hidden;
+            }
             try self.box.build(constraint);
             self.grid = self.box.grid;
         }
@@ -279,15 +280,6 @@ pub fn GitStatusTabs(comptime Widget: type) type {
 
         pub fn clear(self: *GitStatusTabs(Widget)) void {
             self.grid = null;
-        }
-
-        pub fn refresh(self: *GitStatusTabs(Widget)) void {
-            for (self.box.children.items, 0..) |*tab, i| {
-                tab.widget.text_box.border_style = if (@intFromEnum(self.selected) == i)
-                    (if (self.focused) .double else .single)
-                else
-                    .hidden;
-            }
         }
     };
 }
@@ -318,7 +310,6 @@ pub fn GitStatusContent(comptime Widget: type) type {
                 var status_list = try GitStatusList(Widget).init(allocator, filtered_statuses.items);
                 errdefer status_list.deinit();
                 status_list.focused = true;
-                status_list.refresh();
                 try box.children.append(.{ .widget = .{ .git_status_list = status_list }, .rect = null, .visibility = .{ .min_size = .{ .width = 20, .height = null }, .priority = 1 } });
             }
 
@@ -327,7 +318,6 @@ pub fn GitStatusContent(comptime Widget: type) type {
                 var diff = try g_diff.GitDiff(Widget).init(allocator, repo);
                 errdefer diff.deinit();
                 diff.focused = false;
-                diff.refresh();
                 try box.children.append(.{ .widget = .{ .git_diff = diff }, .rect = null, .visibility = .{ .min_size = .{ .width = 60, .height = null }, .priority = 0 } });
             }
 
@@ -350,6 +340,10 @@ pub fn GitStatusContent(comptime Widget: type) type {
 
         pub fn build(self: *GitStatusContent(Widget), constraint: layout.Constraint) !void {
             self.clear();
+            var status_list = &self.box.children.items[0].widget.git_status_list;
+            status_list.focused = self.focused and self.selected == .status_list;
+            var diff = &self.box.children.items[1].widget.git_diff;
+            diff.focused = self.focused and self.selected == .diff;
             if (self.filtered_statuses.items.len > 0) {
                 try self.box.build(constraint);
                 self.grid = self.box.grid;
@@ -419,21 +413,10 @@ pub fn GitStatusContent(comptime Widget: type) type {
             if (self.selected == .diff and self.box.children.items[1].widget.git_diff.grid == null) {
                 self.selected = .status_list;
             }
-
-            self.refresh();
         }
 
         pub fn clear(self: *GitStatusContent(Widget)) void {
             self.grid = null;
-        }
-
-        pub fn refresh(self: *GitStatusContent(Widget)) void {
-            var status_list = &self.box.children.items[0].widget.git_status_list;
-            status_list.focused = self.focused and self.selected == .status_list;
-            status_list.refresh();
-            var diff = &self.box.children.items[1].widget.git_diff;
-            diff.focused = self.focused and self.selected == .diff;
-            diff.refresh();
         }
 
         pub fn scrolledToTop(self: GitStatusContent(Widget)) bool {
@@ -622,6 +605,11 @@ pub fn GitStatus(comptime Widget: type) type {
 
         pub fn build(self: *GitStatus(Widget), constraint: layout.Constraint) !void {
             self.clear();
+            var status_tabs = &self.box.children.items[0].widget.git_status_tabs;
+            status_tabs.focused = self.focused and self.selected == .status_tabs;
+            var stack = &self.box.children.items[1].widget.git_ui_stack;
+            stack.focused = self.focused and self.selected == .status_content;
+            stack.selected = @intFromEnum(status_tabs.selected);
             try self.box.build(constraint);
             self.grid = self.box.grid;
         }
@@ -649,22 +637,10 @@ pub fn GitStatus(comptime Widget: type) type {
             if (self.selected == .status_content and self.box.children.items[1].widget.git_ui_stack.getSelected().git_status_content.grid == null) {
                 self.selected = .status_tabs;
             }
-
-            self.refresh();
         }
 
         pub fn clear(self: *GitStatus(Widget)) void {
             self.grid = null;
-        }
-
-        pub fn refresh(self: *GitStatus(Widget)) void {
-            var status_tabs = &self.box.children.items[0].widget.git_status_tabs;
-            status_tabs.focused = self.focused and self.selected == .status_tabs;
-            status_tabs.refresh();
-            var stack = &self.box.children.items[1].widget.git_ui_stack;
-            stack.focused = self.focused and self.selected == .status_content;
-            stack.selected = @intFromEnum(status_tabs.selected);
-            stack.refresh();
         }
     };
 }

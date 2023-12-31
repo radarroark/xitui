@@ -72,6 +72,12 @@ pub fn GitCommitList(comptime Widget: type) type {
 
         pub fn build(self: *GitCommitList(Widget), constraint: layout.Constraint) !void {
             self.clear();
+            for (self.scroll.child.box.children.items, 0..) |*commit, i| {
+                commit.widget.text_box.border_style = if (self.selected == i)
+                    (if (self.focused) .double else .single)
+                else
+                    .hidden;
+            }
             try self.scroll.build(constraint);
             self.grid = self.scroll.grid;
         }
@@ -116,21 +122,10 @@ pub fn GitCommitList(comptime Widget: type) type {
                 },
                 else => {},
             }
-
-            self.refresh();
         }
 
         pub fn clear(self: *GitCommitList(Widget)) void {
             self.grid = null;
-        }
-
-        pub fn refresh(self: *GitCommitList(Widget)) void {
-            for (self.scroll.child.box.children.items, 0..) |*commit, i| {
-                commit.widget.text_box.border_style = if (self.selected == i)
-                    (if (self.focused) .double else .single)
-                else
-                    .hidden;
-            }
         }
 
         fn updateScroll(self: *GitCommitList(Widget)) void {
@@ -188,6 +183,20 @@ pub fn GitLog(comptime Widget: type) type {
 
         pub fn build(self: *GitLog(Widget), constraint: layout.Constraint) !void {
             self.clear();
+            switch (self.selected) {
+                .commit_list => {
+                    var commit_list = &self.box.children.items[0].widget.git_commit_list;
+                    commit_list.focused = self.focused;
+                    var diff = &self.box.children.items[1].widget.git_diff;
+                    diff.focused = false;
+                },
+                .diff => {
+                    var commit_list = &self.box.children.items[0].widget.git_commit_list;
+                    commit_list.focused = false;
+                    var diff = &self.box.children.items[1].widget.git_diff;
+                    diff.focused = self.focused;
+                },
+            }
             try self.box.build(constraint);
             self.grid = self.box.grid;
         }
@@ -251,33 +260,10 @@ pub fn GitLog(comptime Widget: type) type {
                 },
                 else => {},
             }
-
-            self.refresh();
         }
 
         pub fn clear(self: *GitLog(Widget)) void {
             self.grid = null;
-        }
-
-        pub fn refresh(self: *GitLog(Widget)) void {
-            switch (self.selected) {
-                .commit_list => {
-                    var commit_list = &self.box.children.items[0].widget.git_commit_list;
-                    commit_list.focused = self.focused;
-                    commit_list.refresh();
-                    var diff = &self.box.children.items[1].widget.git_diff;
-                    diff.focused = false;
-                    diff.refresh();
-                },
-                .diff => {
-                    var commit_list = &self.box.children.items[0].widget.git_commit_list;
-                    commit_list.focused = false;
-                    commit_list.refresh();
-                    var diff = &self.box.children.items[1].widget.git_diff;
-                    diff.focused = self.focused;
-                    diff.refresh();
-                },
-            }
         }
 
         pub fn scrolledToTop(self: GitLog(Widget)) bool {
