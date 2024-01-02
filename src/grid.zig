@@ -28,8 +28,6 @@ pub const Grid = struct {
     }
 
     pub fn initFromGrid(allocator: std.mem.Allocator, grid: Grid, size: Size, grid_x: isize, grid_y: isize) !Grid {
-        // TODO: for now this is just copying from the source grid.
-        // we really should just be getting a view into it, but i'm too lazy right now.
         const buffer = try allocator.alloc(Grid.Cell, size.width * size.height);
         errdefer allocator.free(buffer);
         for (buffer) |*cell| {
@@ -65,6 +63,19 @@ pub const Grid = struct {
 
     pub fn deinit(self: *Grid) void {
         self.allocator.free(self.buffer);
+    }
+
+    pub fn drawGrid(self: *Grid, child_grid: Grid, target_x: usize, target_y: usize) !void {
+        for (0..child_grid.size.height) |y| {
+            for (0..child_grid.size.width) |x| {
+                const rune = child_grid.cells.items[try child_grid.cells.at(.{ y, x })].rune;
+                if (self.cells.at(.{ y + target_y, x + target_x })) |index| {
+                    self.cells.items[index].rune = rune;
+                } else |_| {
+                    break;
+                }
+            }
+        }
     }
 };
 

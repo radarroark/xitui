@@ -238,17 +238,8 @@ pub fn Box(comptime Widget: type) type {
                     for (self.children.items) |*child| {
                         if (child.widget.getGrid()) |child_grid| {
                             child.rect = .{ .x = 0, .y = @as(isize, @intCast(line + border_size)), .size = child_grid.size };
-                            for (0..child_grid.size.height) |y| {
-                                for (0..child_grid.size.width) |x| {
-                                    const rune = child_grid.cells.items[try child_grid.cells.at(.{ y, x })].rune;
-                                    if (grid.cells.at(.{ line + border_size, x + border_size })) |index| {
-                                        grid.cells.items[index].rune = rune;
-                                    } else |_| {
-                                        break;
-                                    }
-                                }
-                                line += 1;
-                            }
+                            try grid.drawGrid(child_grid, border_size, line + border_size);
+                            line += child_grid.size.height;
                         }
                     }
                 },
@@ -257,17 +248,8 @@ pub fn Box(comptime Widget: type) type {
                     for (self.children.items) |*child| {
                         if (child.widget.getGrid()) |child_grid| {
                             child.rect = .{ .x = @as(isize, @intCast(col + border_size)), .y = 0, .size = child_grid.size };
-                            for (0..child_grid.size.width) |x| {
-                                for (0..child_grid.size.height) |y| {
-                                    const rune = child_grid.cells.items[try child_grid.cells.at(.{ y, x })].rune;
-                                    if (grid.cells.at(.{ y + border_size, col + border_size })) |index| {
-                                        grid.cells.items[index].rune = rune;
-                                    } else |_| {
-                                        break;
-                                    }
-                                }
-                                col += 1;
-                            }
+                            try grid.drawGrid(child_grid, col + border_size, border_size);
+                            col += child_grid.size.width;
                         }
                     }
                 },
