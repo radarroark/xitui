@@ -1,12 +1,12 @@
 const std = @import("std");
-const grd = @import("./grid.zig");
+const Grid = @import("./grid.zig").Grid;
 const layout = @import("./layout.zig");
 const inp = @import("./input.zig");
 
 pub fn Text(comptime Widget: type) type {
     return struct {
         allocator: std.mem.Allocator,
-        grid: ?grd.Grid,
+        grid: ?Grid,
         content: []const u8,
 
         pub fn init(allocator: std.mem.Allocator, content: []const u8) Text(Widget) {
@@ -27,7 +27,7 @@ pub fn Text(comptime Widget: type) type {
         pub fn build(self: *Text(Widget), constraint: layout.Constraint) !void {
             self.clearGrid();
             const width = try std.unicode.utf8CountCodepoints(self.content);
-            var grid = try grd.Grid.init(self.allocator, .{ .width = @max(1, @min(width, constraint.max_size.width orelse width)), .height = 1 });
+            var grid = try Grid.init(self.allocator, .{ .width = @max(1, @min(width, constraint.max_size.width orelse width)), .height = 1 });
             errdefer grid.deinit();
             var utf8 = (try std.unicode.Utf8View.init(self.content)).iterator();
             var i: u32 = 0;
@@ -53,7 +53,7 @@ pub fn Text(comptime Widget: type) type {
             }
         }
 
-        pub fn getGrid(self: Text(Widget)) ?grd.Grid {
+        pub fn getGrid(self: Text(Widget)) ?Grid {
             return self.grid;
         }
     };
@@ -61,7 +61,7 @@ pub fn Text(comptime Widget: type) type {
 
 pub fn Box(comptime Widget: type) type {
     return struct {
-        grid: ?grd.Grid,
+        grid: ?Grid,
         allocator: std.mem.Allocator,
         children: std.ArrayList(Child),
         border_style: ?BorderStyle,
@@ -229,7 +229,7 @@ pub fn Box(comptime Widget: type) type {
             height += border_size * 2;
             height = @max(height, constraint.min_size.height orelse height);
 
-            var grid = try grd.Grid.init(self.allocator, .{ .width = width, .height = height });
+            var grid = try Grid.init(self.allocator, .{ .width = width, .height = height });
             errdefer grid.deinit();
 
             switch (self.direction) {
@@ -321,7 +321,7 @@ pub fn Box(comptime Widget: type) type {
             }
         }
 
-        pub fn getGrid(self: Box(Widget)) ?grd.Grid {
+        pub fn getGrid(self: Box(Widget)) ?Grid {
             return self.grid;
         }
     };
@@ -397,7 +397,7 @@ pub fn TextBox(comptime Widget: type) type {
             self.box.clearGrid();
         }
 
-        pub fn getGrid(self: TextBox(Widget)) ?grd.Grid {
+        pub fn getGrid(self: TextBox(Widget)) ?Grid {
             return self.box.getGrid();
         }
     };
@@ -406,7 +406,7 @@ pub fn TextBox(comptime Widget: type) type {
 pub fn Scroll(comptime Widget: type) type {
     return struct {
         allocator: std.mem.Allocator,
-        grid: ?grd.Grid,
+        grid: ?Grid,
         child: *Widget,
         x: isize,
         y: isize,
@@ -459,7 +459,7 @@ pub fn Scroll(comptime Widget: type) type {
             };
             try self.child.build(child_constraint);
             if (self.child.getGrid()) |child_grid| {
-                self.grid = try grd.Grid.initFromGrid(self.allocator, child_grid, .{
+                self.grid = try Grid.initFromGrid(self.allocator, child_grid, .{
                     .width = @max(1, @min(child_grid.size.width, constraint.max_size.width orelse child_grid.size.width)),
                     .height = @max(1, @min(child_grid.size.height, constraint.max_size.height orelse child_grid.size.height)),
                 }, self.x, self.y);
@@ -477,7 +477,7 @@ pub fn Scroll(comptime Widget: type) type {
             }
         }
 
-        pub fn getGrid(self: Scroll(Widget)) ?grd.Grid {
+        pub fn getGrid(self: Scroll(Widget)) ?Grid {
             return self.grid;
         }
 

@@ -1,6 +1,6 @@
 const std = @import("std");
 const wgt = @import("./widget.zig");
-const grd = @import("./grid.zig");
+const Grid = @import("./grid.zig").Grid;
 const layout = @import("./layout.zig");
 const inp = @import("./input.zig");
 const g_diff = @import("./git_diff.zig");
@@ -85,7 +85,7 @@ pub fn GitStatusListItem(comptime Widget: type) type {
             self.box.clearGrid();
         }
 
-        pub fn getGrid(self: GitStatusListItem(Widget)) ?grd.Grid {
+        pub fn getGrid(self: GitStatusListItem(Widget)) ?Grid {
             return self.box.getGrid();
         }
 
@@ -185,7 +185,7 @@ pub fn GitStatusList(comptime Widget: type) type {
             self.scroll.clearGrid();
         }
 
-        pub fn getGrid(self: GitStatusList(Widget)) ?grd.Grid {
+        pub fn getGrid(self: GitStatusList(Widget)) ?Grid {
             return self.scroll.getGrid();
         }
 
@@ -281,7 +281,7 @@ pub fn GitStatusTabs(comptime Widget: type) type {
             self.box.clearGrid();
         }
 
-        pub fn getGrid(self: GitStatusTabs(Widget)) ?grd.Grid {
+        pub fn getGrid(self: GitStatusTabs(Widget)) ?Grid {
             return self.box.getGrid();
         }
     };
@@ -419,7 +419,7 @@ pub fn GitStatusContent(comptime Widget: type) type {
             self.box.clearGrid();
         }
 
-        pub fn getGrid(self: GitStatusContent(Widget)) ?grd.Grid {
+        pub fn getGrid(self: GitStatusContent(Widget)) ?Grid {
             return self.box.getGrid();
         }
 
@@ -644,7 +644,7 @@ pub fn GitStatus(comptime Widget: type) type {
             self.box.clearGrid();
         }
 
-        pub fn getGrid(self: GitStatus(Widget)) ?grd.Grid {
+        pub fn getGrid(self: GitStatus(Widget)) ?Grid {
             return self.box.getGrid();
         }
     };

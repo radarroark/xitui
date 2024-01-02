@@ -1,6 +1,6 @@
 const std = @import("std");
 const wgt = @import("./widget.zig");
-const grd = @import("./grid.zig");
+const Grid = @import("./grid.zig").Grid;
 const layout = @import("./layout.zig");
 const inp = @import("./input.zig");
 
@@ -131,7 +131,7 @@ pub fn GitDiff(comptime Widget: type) type {
             self.box.clearGrid();
         }
 
-        pub fn getGrid(self: GitDiff(Widget)) ?grd.Grid {
+        pub fn getGrid(self: GitDiff(Widget)) ?Grid {
             return self.box.getGrid();
         }
 

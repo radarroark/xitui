@@ -1,6 +1,6 @@
 const std = @import("std");
 const wgt = @import("./widget.zig");
-const grd = @import("./grid.zig");
+const Grid = @import("./grid.zig").Grid;
 const layout = @import("./layout.zig");
 const inp = @import("./input.zig");
 const g_diff = @import("./git_diff.zig");
@@ -125,7 +125,7 @@ pub fn GitCommitList(comptime Widget: type) type {
             self.scroll.clearGrid();
         }
 
-        pub fn getGrid(self: GitCommitList(Widget)) ?grd.Grid {
+        pub fn getGrid(self: GitCommitList(Widget)) ?Grid {
             return self.scroll.getGrid();
         }
 
@@ -264,7 +264,7 @@ pub fn GitLog(comptime Widget: type) type {
             self.box.clearGrid();
         }
 
-        pub fn getGrid(self: GitLog(Widget)) ?grd.Grid {
+        pub fn getGrid(self: GitLog(Widget)) ?Grid {
             return self.box.getGrid();
         }
 

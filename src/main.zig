@@ -5,7 +5,7 @@
 const std = @import("std");
 const term = @import("./terminal.zig");
 const wgt = @import("./widget.zig");
-const grd = @import("./grid.zig");
+const Grid = @import("./grid.zig").Grid;
 const g_diff = @import("./git_diff.zig");
 const g_log = @import("./git_log.zig");
 const g_stat = @import("./git_status.zig");
@@ -58,14 +58,14 @@ const Widget = union(enum) {
         }
     }
 
-    pub fn getGrid(self: Widget) ?grd.Grid {
+    pub fn getGrid(self: Widget) ?Grid {
         switch (self) {
             inline else => |*case| return case.getGrid(),
         }
     }
 };
 
-fn tick(allocator: std.mem.Allocator, root: *Widget, last_grid_maybe: *?grd.Grid, last_size: *layout.Size) !void {
+fn tick(allocator: std.mem.Allocator, root: *Widget, last_grid_maybe: *?Grid, last_size: *layout.Size) !void {
     const root_size = layout.Size{ .width = term.terminal.size.width, .height = term.terminal.size.height };
     if (root_size.width == 0 or root_size.height == 0) {
         return;
@@ -114,7 +114,7 @@ fn tick(allocator: std.mem.Allocator, root: *Widget, last_grid_maybe: *?grd.Grid
         last_size.* = root_size;
 
         if (root.getGrid()) |grid| {
-            last_grid_maybe.* = try grd.Grid.initFromGrid(allocator, grid, grid.size, 0, 0);
+            last_grid_maybe.* = try Grid.initFromGrid(allocator, grid, grid.size, 0, 0);
             for (0..grid.size.height) |y| {
                 for (0..grid.size.width) |x| {
                     if (grid.cells.items[try grid.cells.at(.{ y, x })].rune) |rune| {
@@ -173,7 +173,7 @@ pub fn main() !void {
     defer term.terminal.deinit();
     try term.setNonBlocking();
 
-    var last_grid_maybe: ?grd.Grid = null;
+    var last_grid_maybe: ?Grid = null;
     defer if (last_grid_maybe) |*last_grid| last_grid.deinit();
     var last_size = layout.Size{ .width = 0, .height = 0 };
 

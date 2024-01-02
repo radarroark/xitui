@@ -1,10 +1,10 @@
 const std = @import("std");
-const Size = @import("./layout.zig").Size;
+const layout = @import("./layout.zig");
 const NDSlice = @import("./ndslice.zig").NDSlice;
 
 pub const Grid = struct {
     allocator: std.mem.Allocator,
-    size: Size,
+    size: layout.Size,
     cells: Cells,
     buffer: []Grid.Cell,
 
@@ -13,7 +13,7 @@ pub const Grid = struct {
     };
     pub const Cells = NDSlice(Cell, 2, .row_major);
 
-    pub fn init(allocator: std.mem.Allocator, size: Size) !Grid {
+    pub fn init(allocator: std.mem.Allocator, size: layout.Size) !Grid {
         const buffer = try allocator.alloc(Grid.Cell, size.width * size.height);
         errdefer allocator.free(buffer);
         for (buffer) |*cell| {
@@ -27,7 +27,7 @@ pub const Grid = struct {
         };
     }
 
-    pub fn initFromGrid(allocator: std.mem.Allocator, grid: Grid, size: Size, grid_x: isize, grid_y: isize) !Grid {
+    pub fn initFromGrid(allocator: std.mem.Allocator, grid: Grid, size: layout.Size, grid_x: isize, grid_y: isize) !Grid {
         const buffer = try allocator.alloc(Grid.Cell, size.width * size.height);
         errdefer allocator.free(buffer);
         for (buffer) |*cell| {

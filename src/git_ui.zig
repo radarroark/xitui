@@ -1,6 +1,6 @@
 const std = @import("std");
 const wgt = @import("./widget.zig");
-const grd = @import("./grid.zig");
+const Grid = @import("./grid.zig").Grid;
 const layout = @import("./layout.zig");
 const inp = @import("./input.zig");
 const g_stat = @import("./git_status.zig");
@@ -72,7 +72,7 @@ pub fn GitUITabs(comptime Widget: type) type {
             self.box.clearGrid();
         }
 
-        pub fn getGrid(self: GitUITabs(Widget)) ?grd.Grid {
+        pub fn getGrid(self: GitUITabs(Widget)) ?Grid {
             return self.box.getGrid();
         }
     };
@@ -122,7 +122,7 @@ pub fn GitUIStack(comptime Widget: type) type {
             self.getSelected().clearGrid();
         }
 
-        pub fn getGrid(self: GitUIStack(Widget)) ?grd.Grid {
+        pub fn getGrid(self: GitUIStack(Widget)) ?Grid {
             return self.getSelected().getGrid();
         }
 
@@ -244,7 +244,7 @@ pub fn GitUI(comptime Widget: type) type {
             self.box.clearGrid();
         }
 
-        pub fn getGrid(self: GitUI(Widget)) ?grd.Grid {
+        pub fn getGrid(self: GitUI(Widget)) ?Grid {
             return self.box.getGrid();
         }
     };
