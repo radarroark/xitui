@@ -6,6 +6,7 @@ const std = @import("std");
 const term = @import("./terminal.zig");
 const wgt = @import("./widget.zig");
 const Grid = @import("./grid.zig").Grid;
+const Focus = @import("./focus.zig").Focus;
 const g_diff = @import("./git_diff.zig");
 const g_log = @import("./git_log.zig");
 const g_stat = @import("./git_status.zig");
@@ -61,6 +62,12 @@ const Widget = union(enum) {
     pub fn getGrid(self: Widget) ?Grid {
         switch (self) {
             inline else => |*case| return case.getGrid(),
+        }
+    }
+
+    pub fn getFocus(self: *Widget) *Focus {
+        switch (self.*) {
+            inline else => |*case| return case.getFocus(),
         }
     }
 };

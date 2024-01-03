@@ -1,6 +1,7 @@
 const std = @import("std");
 const wgt = @import("./widget.zig");
 const Grid = @import("./grid.zig").Grid;
+const Focus = @import("./focus.zig").Focus;
 const layout = @import("./layout.zig");
 const inp = @import("./input.zig");
 
@@ -133,6 +134,10 @@ pub fn GitDiff(comptime Widget: type) type {
 
         pub fn getGrid(self: GitDiff(Widget)) ?Grid {
             return self.box.getGrid();
+        }
+
+        pub fn getFocus(self: *GitDiff(Widget)) *Focus {
+            return self.box.getFocus();
         }
 
         pub fn clearDiffs(self: *GitDiff(Widget)) !void {

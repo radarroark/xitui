@@ -1,6 +1,7 @@
 const std = @import("std");
 const wgt = @import("./widget.zig");
 const Grid = @import("./grid.zig").Grid;
+const Focus = @import("./focus.zig").Focus;
 const layout = @import("./layout.zig");
 const inp = @import("./input.zig");
 const g_diff = @import("./git_diff.zig");
@@ -44,6 +45,7 @@ pub fn GitCommitList(comptime Widget: type) type {
                 const line = std.mem.sliceTo(c.git_commit_message(commit), '\n');
                 var text_box = try wgt.TextBox(Widget).init(allocator, line, .hidden);
                 errdefer text_box.deinit();
+                text_box.getFocus().focusable = true;
                 try inner_box.children.append(.{ .widget = .{ .text_box = text_box }, .rect = null, .visibility = null });
             }
 
@@ -129,6 +131,10 @@ pub fn GitCommitList(comptime Widget: type) type {
             return self.scroll.getGrid();
         }
 
+        pub fn getFocus(self: *GitCommitList(Widget)) *Focus {
+            return self.scroll.getFocus();
+        }
+
         fn updateScroll(self: *GitCommitList(Widget)) void {
             const left_box = &self.scroll.child.box;
             if (left_box.children.items.len > self.selected) {
@@ -162,6 +168,7 @@ pub fn GitLog(comptime Widget: type) type {
             {
                 var diff = try g_diff.GitDiff(Widget).init(allocator, repo);
                 errdefer diff.deinit();
+                diff.getFocus().focusable = true;
                 try box.children.append(.{ .widget = .{ .git_diff = diff }, .rect = null, .visibility = .{ .min_size = .{ .width = 60, .height = null }, .priority = 0 } });
             }
 
@@ -266,6 +273,10 @@ pub fn GitLog(comptime Widget: type) type {
 
         pub fn getGrid(self: GitLog(Widget)) ?Grid {
             return self.box.getGrid();
+        }
+
+        pub fn getFocus(self: *GitLog(Widget)) *Focus {
+            return self.box.getFocus();
         }
 
         pub fn scrolledToTop(self: GitLog(Widget)) bool {

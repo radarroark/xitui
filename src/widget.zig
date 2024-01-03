@@ -1,23 +1,27 @@
 const std = @import("std");
 const Grid = @import("./grid.zig").Grid;
+const Focus = @import("./focus.zig").Focus;
 const layout = @import("./layout.zig");
 const inp = @import("./input.zig");
 
 pub fn Text(comptime Widget: type) type {
     return struct {
         allocator: std.mem.Allocator,
+        focus: Focus,
         grid: ?Grid,
         content: []const u8,
 
         pub fn init(allocator: std.mem.Allocator, content: []const u8) Text(Widget) {
             return .{
                 .allocator = allocator,
+                .focus = Focus.init(allocator),
                 .grid = null,
                 .content = content,
             };
         }
 
         pub fn deinit(self: *Text(Widget)) void {
+            self.focus.deinit();
             if (self.grid) |*grid| {
                 grid.deinit();
                 self.grid = null;
@@ -56,11 +60,16 @@ pub fn Text(comptime Widget: type) type {
         pub fn getGrid(self: Text(Widget)) ?Grid {
             return self.grid;
         }
+
+        pub fn getFocus(self: *Text(Widget)) *Focus {
+            return &self.focus;
+        }
     };
 }
 
 pub fn Box(comptime Widget: type) type {
     return struct {
+        focus: Focus,
         grid: ?Grid,
         allocator: std.mem.Allocator,
         children: std.ArrayList(Child),
@@ -69,7 +78,7 @@ pub fn Box(comptime Widget: type) type {
 
         pub const Child = struct {
             widget: Widget,
-            rect: ?layout.Rect,
+            rect: ?layout.IRect,
             visibility: ?struct {
                 min_size: layout.MaybeSize,
                 priority: isize,
@@ -89,6 +98,7 @@ pub fn Box(comptime Widget: type) type {
 
         pub fn init(allocator: std.mem.Allocator, border_style: ?BorderStyle, direction: Direction) !Box(Widget) {
             return .{
+                .focus = Focus.init(allocator),
                 .grid = null,
                 .allocator = allocator,
                 .children = std.ArrayList(Child).init(allocator),
@@ -98,14 +108,15 @@ pub fn Box(comptime Widget: type) type {
         }
 
         pub fn deinit(self: *Box(Widget)) void {
-            for (self.children.items) |*child| {
-                child.widget.deinit();
-            }
-            self.children.deinit();
+            self.focus.deinit();
             if (self.grid) |*grid| {
                 grid.deinit();
                 self.grid = null;
             }
+            for (self.children.items) |*child| {
+                child.widget.deinit();
+            }
+            self.children.deinit();
         }
 
         pub fn build(self: *Box(Widget), constraint: layout.Constraint) !void {
@@ -232,6 +243,8 @@ pub fn Box(comptime Widget: type) type {
             var grid = try Grid.init(self.allocator, .{ .width = width, .height = height });
             errdefer grid.deinit();
 
+            self.getFocus().clear();
+
             switch (self.direction) {
                 .vert => {
                     var line: usize = 0;
@@ -239,6 +252,7 @@ pub fn Box(comptime Widget: type) type {
                         if (child.widget.getGrid()) |child_grid| {
                             child.rect = .{ .x = 0, .y = @as(isize, @intCast(line + border_size)), .size = child_grid.size };
                             try grid.drawGrid(child_grid, border_size, line + border_size);
+                            try self.getFocus().addChild(child.widget.getFocus(), child_grid.size, border_size, line + border_size);
                             line += child_grid.size.height;
                         }
                     }
@@ -249,6 +263,7 @@ pub fn Box(comptime Widget: type) type {
                         if (child.widget.getGrid()) |child_grid| {
                             child.rect = .{ .x = @as(isize, @intCast(col + border_size)), .y = 0, .size = child_grid.size };
                             try grid.drawGrid(child_grid, col + border_size, border_size);
+                            try self.getFocus().addChild(child.widget.getFocus(), child_grid.size, col + border_size, border_size);
                             col += child_grid.size.width;
                         }
                     }
@@ -323,6 +338,10 @@ pub fn Box(comptime Widget: type) type {
 
         pub fn getGrid(self: Box(Widget)) ?Grid {
             return self.grid;
+        }
+
+        pub fn getFocus(self: *Box(Widget)) *Focus {
+            return &self.focus;
         }
     };
 }
@@ -400,6 +419,10 @@ pub fn TextBox(comptime Widget: type) type {
         pub fn getGrid(self: TextBox(Widget)) ?Grid {
             return self.box.getGrid();
         }
+
+        pub fn getFocus(self: *TextBox(Widget)) *Focus {
+            return self.box.getFocus();
+        }
     };
 }
 
@@ -433,12 +456,12 @@ pub fn Scroll(comptime Widget: type) type {
         }
 
         pub fn deinit(self: *Scroll(Widget)) void {
-            self.child.deinit();
-            self.allocator.destroy(self.child);
             if (self.grid) |*grid| {
                 grid.deinit();
                 self.grid = null;
             }
+            self.child.deinit();
+            self.allocator.destroy(self.child);
         }
 
         pub fn build(self: *Scroll(Widget), constraint: layout.Constraint) !void {
@@ -481,7 +504,7 @@ pub fn Scroll(comptime Widget: type) type {
             return self.grid;
         }
 
-        pub fn scrollToRect(self: *Scroll(Widget), rect: layout.Rect) void {
+        pub fn scrollToRect(self: *Scroll(Widget), rect: layout.IRect) void {
             if (self.grid) |grid| {
                 if (self.direction == .horiz or self.direction == .both) {
                     if (rect.x < self.x) {
@@ -508,6 +531,10 @@ pub fn Scroll(comptime Widget: type) type {
                     }
                 }
             }
+        }
+
+        pub fn getFocus(self: *Scroll(Widget)) *Focus {
+            return self.child.getFocus();
         }
     };
 }

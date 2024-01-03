@@ -1,6 +1,7 @@
 const std = @import("std");
 const wgt = @import("./widget.zig");
 const Grid = @import("./grid.zig").Grid;
+const Focus = @import("./focus.zig").Focus;
 const layout = @import("./layout.zig");
 const inp = @import("./input.zig");
 const g_stat = @import("./git_status.zig");
@@ -23,12 +24,14 @@ pub fn GitUITabs(comptime Widget: type) type {
             {
                 var text_box = try wgt.TextBox(Widget).init(allocator, "log", .single);
                 errdefer text_box.deinit();
+                text_box.getFocus().focusable = true;
                 try box.children.append(.{ .widget = .{ .text_box = text_box }, .rect = null, .visibility = null });
             }
 
             {
                 var text_box = try wgt.TextBox(Widget).init(allocator, "status", .hidden);
                 errdefer text_box.deinit();
+                text_box.getFocus().focusable = true;
                 try box.children.append(.{ .widget = .{ .text_box = text_box }, .rect = null, .visibility = null });
             }
 
@@ -74,6 +77,10 @@ pub fn GitUITabs(comptime Widget: type) type {
 
         pub fn getGrid(self: GitUITabs(Widget)) ?Grid {
             return self.box.getGrid();
+        }
+
+        pub fn getFocus(self: *GitUITabs(Widget)) *Focus {
+            return self.box.getFocus();
         }
     };
 }
@@ -124,6 +131,10 @@ pub fn GitUIStack(comptime Widget: type) type {
 
         pub fn getGrid(self: GitUIStack(Widget)) ?Grid {
             return self.getSelected().getGrid();
+        }
+
+        pub fn getFocus(self: *GitUIStack(Widget)) *Focus {
+            return self.getSelected().getFocus();
         }
 
         pub fn getSelected(self: GitUIStack(Widget)) *Widget {
@@ -246,6 +257,10 @@ pub fn GitUI(comptime Widget: type) type {
 
         pub fn getGrid(self: GitUI(Widget)) ?Grid {
             return self.box.getGrid();
+        }
+
+        pub fn getFocus(self: *GitUI(Widget)) *Focus {
+            return self.box.getFocus();
         }
     };
 }
