@@ -72,7 +72,7 @@ pub fn Box(comptime Widget: type) type {
         focus: Focus,
         grid: ?Grid,
         allocator: std.mem.Allocator,
-        children: std.ArrayList(Child),
+        children: std.AutoArrayHashMap(usize, Child),
         border_style: ?BorderStyle,
         direction: Direction,
 
@@ -101,7 +101,7 @@ pub fn Box(comptime Widget: type) type {
                 .focus = Focus.init(allocator),
                 .grid = null,
                 .allocator = allocator,
-                .children = std.ArrayList(Child).init(allocator),
+                .children = std.AutoArrayHashMap(usize, Child).init(allocator),
                 .border_style = border_style,
                 .direction = direction,
             };
@@ -113,7 +113,7 @@ pub fn Box(comptime Widget: type) type {
                 grid.deinit();
                 self.grid = null;
             }
-            for (self.children.items) |*child| {
+            for (self.children.values()) |*child| {
                 child.widget.deinit();
             }
             self.children.deinit();
@@ -132,7 +132,7 @@ pub fn Box(comptime Widget: type) type {
 
             var sorted_children = std.AutoArrayHashMap(usize, Child).init(self.allocator);
             defer sorted_children.deinit();
-            for (self.children.items, 0..) |child, i| {
+            for (self.children.values(), 0..) |child, i| {
                 try sorted_children.put(i, child);
             }
             const SortCtx = struct {
@@ -156,7 +156,7 @@ pub fn Box(comptime Widget: type) type {
             var remaining_height_maybe = if (constraint.max_size.height) |max_height| max_height - (border_size * 2) else null;
 
             for (sorted_children.keys(), 0..) |child_index, sorted_child_index| {
-                var child = &self.children.items[child_index];
+                var child = &self.children.values()[child_index];
                 child.widget.clearGrid();
 
                 if (remaining_width_maybe) |remaining_width| {
@@ -186,7 +186,7 @@ pub fn Box(comptime Widget: type) type {
                         if (vis.min_size.width) |min_width| {
                             for (sorted_child_index + 1..sorted_children.count()) |next_sorted_child_index| {
                                 const next_child_index = sorted_children.keys()[next_sorted_child_index];
-                                const next_child = &self.children.items[next_child_index];
+                                const next_child = &self.children.values()[next_child_index];
                                 if (next_child.visibility) |next_vis| {
                                     if (next_vis.min_size.width) |next_min_width| {
                                         if (expected_remaining_width.* >= min_width + next_min_width) {
@@ -201,7 +201,7 @@ pub fn Box(comptime Widget: type) type {
                         if (vis.min_size.height) |min_height| {
                             for (sorted_child_index + 1..sorted_children.count()) |next_sorted_child_index| {
                                 const next_child_index = sorted_children.keys()[next_sorted_child_index];
-                                const next_child = &self.children.items[next_child_index];
+                                const next_child = &self.children.values()[next_child_index];
                                 if (next_child.visibility) |next_vis| {
                                     if (next_vis.min_size.height) |next_min_height| {
                                         if (expected_remaining_height.* >= min_height + next_min_height) {
@@ -248,7 +248,7 @@ pub fn Box(comptime Widget: type) type {
             switch (self.direction) {
                 .vert => {
                     var line: usize = 0;
-                    for (self.children.items) |*child| {
+                    for (self.children.values()) |*child| {
                         if (child.widget.getGrid()) |child_grid| {
                             child.rect = .{ .x = 0, .y = @as(isize, @intCast(line + border_size)), .size = child_grid.size };
                             try grid.drawGrid(child_grid, border_size, line + border_size);
@@ -259,7 +259,7 @@ pub fn Box(comptime Widget: type) type {
                 },
                 .horiz => {
                     var col: usize = 0;
-                    for (self.children.items) |*child| {
+                    for (self.children.values()) |*child| {
                         if (child.widget.getGrid()) |child_grid| {
                             child.rect = .{ .x = @as(isize, @intCast(col + border_size)), .y = 0, .size = child_grid.size };
                             try grid.drawGrid(child_grid, col + border_size, border_size);
@@ -324,7 +324,7 @@ pub fn Box(comptime Widget: type) type {
         }
 
         pub fn input(self: *Box(Widget), key: inp.Key) !void {
-            for (self.children.items) |*child| {
+            for (self.children.values()) |*child| {
                 try child.widget.input(key);
             }
         }
@@ -383,7 +383,7 @@ pub fn TextBox(comptime Widget: type) type {
             for (lines.items) |line| {
                 var text = Text(Widget).init(allocator, line.items);
                 errdefer text.deinit();
-                try box.children.append(.{ .widget = .{ .text = text }, .rect = null, .visibility = null });
+                try box.children.put(text.getFocus().id, .{ .widget = .{ .text = text }, .rect = null, .visibility = null });
             }
 
             return .{

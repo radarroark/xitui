@@ -25,14 +25,14 @@ pub fn GitUITabs(comptime Widget: type) type {
                 var text_box = try wgt.TextBox(Widget).init(allocator, "log", .single);
                 errdefer text_box.deinit();
                 text_box.getFocus().focusable = true;
-                try box.children.append(.{ .widget = .{ .text_box = text_box }, .rect = null, .visibility = null });
+                try box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .visibility = null });
             }
 
             {
                 var text_box = try wgt.TextBox(Widget).init(allocator, "status", .hidden);
                 errdefer text_box.deinit();
                 text_box.getFocus().focusable = true;
-                try box.children.append(.{ .widget = .{ .text_box = text_box }, .rect = null, .visibility = null });
+                try box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .visibility = null });
             }
 
             return .{
@@ -48,7 +48,7 @@ pub fn GitUITabs(comptime Widget: type) type {
 
         pub fn build(self: *GitUITabs(Widget), constraint: layout.Constraint) !void {
             self.clearGrid();
-            for (self.box.children.items, 0..) |*tab, i| {
+            for (self.box.children.values(), 0..) |*tab, i| {
                 tab.widget.text_box.border_style = if (self.selected == i)
                     (if (self.focused) .double else .single)
                 else
@@ -63,7 +63,7 @@ pub fn GitUITabs(comptime Widget: type) type {
                     self.selected -|= 1;
                 },
                 .arrow_right => {
-                    if (self.selected + 1 < self.box.children.items.len) {
+                    if (self.selected + 1 < self.box.children.count()) {
                         self.selected += 1;
                     }
                 },
@@ -87,20 +87,20 @@ pub fn GitUITabs(comptime Widget: type) type {
 
 pub fn GitUIStack(comptime Widget: type) type {
     return struct {
-        children: std.ArrayList(Widget),
+        children: std.AutoArrayHashMap(usize, Widget),
         selected: usize,
         focused: bool,
 
         pub fn init(allocator: std.mem.Allocator) GitUIStack(Widget) {
             return .{
-                .children = std.ArrayList(Widget).init(allocator),
+                .children = std.AutoArrayHashMap(usize, Widget).init(allocator),
                 .selected = 0,
                 .focused = false,
             };
         }
 
         pub fn deinit(self: *GitUIStack(Widget)) void {
-            for (self.children.items) |*child| {
+            for (self.children.values()) |*child| {
                 child.deinit();
             }
             self.children.deinit();
@@ -108,7 +108,7 @@ pub fn GitUIStack(comptime Widget: type) type {
 
         pub fn build(self: *GitUIStack(Widget), constraint: layout.Constraint) !void {
             self.clearGrid();
-            for (self.children.items, 0..) |*child, i| {
+            for (self.children.values(), 0..) |*child, i| {
                 switch (child.*) {
                     inline else => |*case| {
                         if (@hasField(@TypeOf(case.*), "focused")) {
@@ -138,7 +138,7 @@ pub fn GitUIStack(comptime Widget: type) type {
         }
 
         pub fn getSelected(self: GitUIStack(Widget)) *Widget {
-            return &self.children.items[self.selected];
+            return &self.children.values()[self.selected];
         }
     };
 }
@@ -155,7 +155,7 @@ pub fn GitUI(comptime Widget: type) type {
             {
                 var git_ui_tabs = try GitUITabs(Widget).init(allocator);
                 errdefer git_ui_tabs.deinit();
-                try box.children.append(.{ .widget = .{ .git_ui_tabs = git_ui_tabs }, .rect = null, .visibility = null });
+                try box.children.put(git_ui_tabs.getFocus().id, .{ .widget = .{ .git_ui_tabs = git_ui_tabs }, .rect = null, .visibility = null });
             }
 
             {
@@ -166,17 +166,17 @@ pub fn GitUI(comptime Widget: type) type {
                     var git_log = try g_log.GitLog(Widget).init(allocator, repo);
                     errdefer git_log.deinit();
                     git_log.focused = true;
-                    try stack.children.append(.{ .git_log = git_log });
+                    try stack.children.put(git_log.getFocus().id, .{ .git_log = git_log });
                 }
 
                 {
                     var git_status = try g_stat.GitStatus(Widget).init(allocator, repo);
                     errdefer git_status.deinit();
                     git_status.focused = false;
-                    try stack.children.append(.{ .git_status = git_status });
+                    try stack.children.put(git_status.getFocus().id, .{ .git_status = git_status });
                 }
 
-                try box.children.append(.{ .widget = .{ .git_ui_stack = stack }, .rect = null, .visibility = null });
+                try box.children.put(stack.getFocus().id, .{ .widget = .{ .git_ui_stack = stack }, .rect = null, .visibility = null });
             }
 
             return .{
@@ -191,9 +191,9 @@ pub fn GitUI(comptime Widget: type) type {
 
         pub fn build(self: *GitUI(Widget), constraint: layout.Constraint) !void {
             self.clearGrid();
-            var git_ui_tabs = &self.box.children.items[0].widget.git_ui_tabs;
+            var git_ui_tabs = &self.box.children.values()[0].widget.git_ui_tabs;
             git_ui_tabs.focused = self.selected == .tabs;
-            var git_ui_stack = &self.box.children.items[1].widget.git_ui_stack;
+            var git_ui_stack = &self.box.children.values()[1].widget.git_ui_stack;
             git_ui_stack.focused = self.selected == .stack;
             git_ui_stack.selected = git_ui_tabs.selected;
             try self.box.build(constraint);
@@ -204,23 +204,23 @@ pub fn GitUI(comptime Widget: type) type {
                 .arrow_up => {
                     switch (self.selected) {
                         .tabs => {
-                            try self.box.children.items[0].widget.input(key);
+                            try self.box.children.values()[0].widget.input(key);
                         },
                         .stack => {
-                            var selected_widget = self.box.children.items[1].widget.git_ui_stack.getSelected();
+                            var selected_widget = self.box.children.values()[1].widget.git_ui_stack.getSelected();
                             switch (selected_widget.*) {
                                 .git_log => {
                                     if (selected_widget.git_log.scrolledToTop()) {
                                         self.selected = .tabs;
                                     } else {
-                                        try self.box.children.items[1].widget.input(key);
+                                        try self.box.children.values()[1].widget.input(key);
                                     }
                                 },
                                 .git_status => {
                                     if (selected_widget.git_status.selected == .status_tabs) {
                                         self.selected = .tabs;
                                     } else {
-                                        try self.box.children.items[1].widget.input(key);
+                                        try self.box.children.values()[1].widget.input(key);
                                     }
                                 },
                                 else => {},
@@ -234,17 +234,17 @@ pub fn GitUI(comptime Widget: type) type {
                             self.selected = .stack;
                         },
                         .stack => {
-                            try self.box.children.items[1].widget.input(key);
+                            try self.box.children.values()[1].widget.input(key);
                         },
                     }
                 },
                 else => {
                     switch (self.selected) {
                         .tabs => {
-                            try self.box.children.items[0].widget.input(key);
+                            try self.box.children.values()[0].widget.input(key);
                         },
                         .stack => {
-                            try self.box.children.items[1].widget.input(key);
+                            try self.box.children.values()[1].widget.input(key);
                         },
                     }
                 },
