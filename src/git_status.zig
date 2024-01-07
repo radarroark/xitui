@@ -678,7 +678,7 @@ pub fn GitStatus(comptime Widget: type) type {
             var stack = &self.box.children.values()[1].widget.git_ui_stack;
             stack.focused = (self.getFocus().child_id == stack.getFocus().id) and self.focused;
             if (status_tabs.getSelectedIndex()) |index| {
-                stack.selected = index;
+                stack.getFocus().child_id = stack.children.keys()[index];
             }
             try self.box.build(constraint);
         }
@@ -700,17 +700,23 @@ pub fn GitStatus(comptime Widget: type) type {
                         },
                         .git_ui_stack => {
                             const stack = &child.git_ui_stack;
-                            if (key == .arrow_up and stack.getSelected().git_status_content.scrolledToTop()) {
-                                index = @intFromEnum(FocusKind.status_tabs);
-                            } else {
-                                try stack.input(key);
+                            if (stack.getSelected()) |selected_widget| {
+                                if (key == .arrow_up and selected_widget.git_status_content.scrolledToTop()) {
+                                    index = @intFromEnum(FocusKind.status_tabs);
+                                } else {
+                                    try stack.input(key);
+                                }
                             }
                         },
                         else => {},
                     }
 
-                    if (index == @intFromEnum(FocusKind.status_content) and self.box.children.values()[1].widget.git_ui_stack.getSelected().git_status_content.getGrid() == null) {
-                        index = @intFromEnum(FocusKind.status_tabs);
+                    if (index == @intFromEnum(FocusKind.status_content)) {
+                        if (self.box.children.values()[@intFromEnum(FocusKind.status_content)].widget.git_ui_stack.getSelected()) |selected_widget| {
+                            if (selected_widget.git_status_content.getGrid() == null) {
+                                index = @intFromEnum(FocusKind.status_tabs);
+                            }
+                        }
                     }
 
                     if (index != current_index) {
