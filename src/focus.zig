@@ -5,6 +5,7 @@ var next_id: usize = 0;
 
 pub const Focus = struct {
     id: usize,
+    child_id: ?usize,
     focusable: bool,
     rects: std.AutoHashMap(usize, layout.URect),
 
@@ -13,6 +14,7 @@ pub const Focus = struct {
         next_id += 1;
         return .{
             .id = id,
+            .child_id = null,
             .focusable = false,
             .rects = std.AutoHashMap(usize, layout.URect).init(allocator),
         };
