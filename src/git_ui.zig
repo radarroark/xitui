@@ -87,12 +87,14 @@ pub fn GitUITabs(comptime Widget: type) type {
 
 pub fn GitUIStack(comptime Widget: type) type {
     return struct {
+        focus: Focus,
         children: std.AutoArrayHashMap(usize, Widget),
         selected: usize,
         focused: bool,
 
         pub fn init(allocator: std.mem.Allocator) GitUIStack(Widget) {
             return .{
+                .focus = Focus.init(allocator),
                 .children = std.AutoArrayHashMap(usize, Widget).init(allocator),
                 .selected = 0,
                 .focused = false,
@@ -100,6 +102,7 @@ pub fn GitUIStack(comptime Widget: type) type {
         }
 
         pub fn deinit(self: *GitUIStack(Widget)) void {
+            self.focus.deinit();
             for (self.children.values()) |*child| {
                 child.deinit();
             }
@@ -134,7 +137,7 @@ pub fn GitUIStack(comptime Widget: type) type {
         }
 
         pub fn getFocus(self: *GitUIStack(Widget)) *Focus {
-            return self.getSelected().getFocus();
+            return &self.focus;
         }
 
         pub fn getSelected(self: GitUIStack(Widget)) *Widget {
@@ -217,7 +220,7 @@ pub fn GitUI(comptime Widget: type) type {
                                     }
                                 },
                                 .git_status => {
-                                    if (selected_widget.git_status.selected == .status_tabs) {
+                                    if (selected_widget.git_status.getSelectedIndex() == 0) {
                                         self.selected = .tabs;
                                     } else {
                                         try self.box.children.values()[1].widget.input(key);
