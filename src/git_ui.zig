@@ -138,8 +138,12 @@ pub fn GitUIStack(comptime Widget: type) type {
                     },
                 }
             }
+            self.getFocus().clear();
             if (self.getSelected()) |selected_widget| {
                 try selected_widget.build(constraint);
+                if (selected_widget.getGrid()) |child_grid| {
+                    try self.getFocus().addChild(selected_widget.getFocus(), child_grid.size, 0, 0);
+                }
             }
         }
 
