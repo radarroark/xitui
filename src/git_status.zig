@@ -201,7 +201,7 @@ pub fn GitStatusList(comptime Widget: type) type {
 
         fn updateScroll(self: *GitStatusList(Widget)) void {
             const left_box = &self.scroll.child.box;
-            if (left_box.children.values().len > self.selected) {
+            if (left_box.children.count() > self.selected) {
                 if (left_box.children.values()[self.selected].rect) |rect| {
                     self.scroll.scrollToRect(rect);
                 }

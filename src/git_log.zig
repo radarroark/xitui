@@ -15,7 +15,6 @@ pub fn GitCommitList(comptime Widget: type) type {
         scroll: wgt.Scroll(Widget),
         repo: ?*c.git_repository,
         commits: std.ArrayList(?*c.git_commit),
-        selected: usize = 0,
         focused: bool,
 
         pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository) !GitCommitList(Widget) {
@@ -52,12 +51,14 @@ pub fn GitCommitList(comptime Widget: type) type {
             // init scroll
             var scroll = try wgt.Scroll(Widget).init(allocator, .{ .box = inner_box }, .vert);
             errdefer scroll.deinit();
+            if (inner_box.children.count() > 0) {
+                scroll.getFocus().child_id = inner_box.children.keys()[0];
+            }
 
             return .{
                 .scroll = scroll,
                 .repo = repo,
                 .commits = commits,
-                .selected = 0,
                 .focused = false,
             };
         }
@@ -72,8 +73,9 @@ pub fn GitCommitList(comptime Widget: type) type {
 
         pub fn build(self: *GitCommitList(Widget), constraint: layout.Constraint) !void {
             self.clearGrid();
-            for (self.scroll.child.box.children.values(), 0..) |*commit, i| {
-                commit.widget.text_box.border_style = if (self.selected == i)
+            const children = &self.scroll.child.box.children;
+            for (children.keys(), children.values()) |id, *commit| {
+                commit.widget.text_box.border_style = if (self.getFocus().child_id == id)
                     (if (self.focused) .double else .single)
                 else
                     .hidden;
@@ -82,44 +84,50 @@ pub fn GitCommitList(comptime Widget: type) type {
         }
 
         pub fn input(self: *GitCommitList(Widget), key: inp.Key) !void {
-            switch (key) {
-                .arrow_up => {
-                    self.selected -|= 1;
-                    self.updateScroll();
-                },
-                .arrow_down => {
-                    if (self.selected + 1 < self.commits.items.len) {
-                        self.selected += 1;
-                        self.updateScroll();
+            if (self.getFocus().child_id) |child_id| {
+                const children = &self.scroll.child.box.children;
+                if (children.getIndex(child_id)) |current_index| {
+                    var index = current_index;
+
+                    switch (key) {
+                        .arrow_up => {
+                            index -|= 1;
+                        },
+                        .arrow_down => {
+                            if (index + 1 < children.count()) {
+                                index += 1;
+                            }
+                        },
+                        .home => {
+                            index = 0;
+                        },
+                        .end => {
+                            if (children.count() > 0) {
+                                index = children.count() - 1;
+                            }
+                        },
+                        .page_up => {
+                            if (self.getGrid()) |grid| {
+                                const half_count = (grid.size.height / 3) / 2;
+                                index -|= half_count;
+                            }
+                        },
+                        .page_down => {
+                            if (self.getGrid()) |grid| {
+                                if (children.count() > 0) {
+                                    const half_count = (grid.size.height / 3) / 2;
+                                    index = @min(index + half_count, children.count() - 1);
+                                }
+                            }
+                        },
+                        else => {},
                     }
-                },
-                .home => {
-                    self.selected = 0;
-                    self.updateScroll();
-                },
-                .end => {
-                    if (self.commits.items.len > 0) {
-                        self.selected = self.commits.items.len - 1;
-                        self.updateScroll();
+
+                    if (index != current_index) {
+                        self.getFocus().child_id = children.keys()[index];
+                        self.updateScroll(index);
                     }
-                },
-                .page_up => {
-                    if (self.getGrid()) |grid| {
-                        const half_count = (grid.size.height / 3) / 2;
-                        self.selected -|= half_count;
-                        self.updateScroll();
-                    }
-                },
-                .page_down => {
-                    if (self.getGrid()) |grid| {
-                        if (self.commits.items.len > 0) {
-                            const half_count = (grid.size.height / 3) / 2;
-                            self.selected = @min(self.selected + half_count, self.commits.items.len - 1);
-                            self.updateScroll();
-                        }
-                    }
-                },
-                else => {},
+                }
             }
         }
 
@@ -135,12 +143,19 @@ pub fn GitCommitList(comptime Widget: type) type {
             return self.scroll.getFocus();
         }
 
-        fn updateScroll(self: *GitCommitList(Widget)) void {
+        pub fn getSelectedIndex(self: GitCommitList(Widget)) ?usize {
+            if (self.scroll.child.box.focus.child_id) |child_id| {
+                const children = &self.scroll.child.box.children;
+                return children.getIndex(child_id);
+            } else {
+                return null;
+            }
+        }
+
+        fn updateScroll(self: *GitCommitList(Widget), index: usize) void {
             const left_box = &self.scroll.child.box;
-            if (left_box.children.values().len > self.selected) {
-                if (left_box.children.values()[self.selected].rect) |rect| {
-                    self.scroll.scrollToRect(rect);
-                }
+            if (left_box.children.values()[index].rect) |rect| {
+                self.scroll.scrollToRect(rect);
             }
         }
     };
@@ -150,7 +165,6 @@ pub fn GitLog(comptime Widget: type) type {
     return struct {
         box: wgt.Box(Widget),
         repo: ?*c.git_repository,
-        selected: union(enum) { commit_list, diff },
         focused: bool,
 
         pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository) !GitLog(Widget) {
@@ -175,9 +189,9 @@ pub fn GitLog(comptime Widget: type) type {
             var git_log = GitLog(Widget){
                 .box = box,
                 .repo = repo,
-                .selected = .commit_list,
                 .focused = false,
             };
+            git_log.getFocus().child_id = box.children.keys()[0];
             try git_log.updateDiff();
 
             return git_log;
@@ -189,19 +203,16 @@ pub fn GitLog(comptime Widget: type) type {
 
         pub fn build(self: *GitLog(Widget), constraint: layout.Constraint) !void {
             self.clearGrid();
-            switch (self.selected) {
-                .commit_list => {
-                    var commit_list = &self.box.children.values()[0].widget.git_commit_list;
-                    commit_list.focused = self.focused;
-                    var diff = &self.box.children.values()[1].widget.git_diff;
-                    diff.focused = false;
-                },
-                .diff => {
-                    var commit_list = &self.box.children.values()[0].widget.git_commit_list;
-                    commit_list.focused = false;
-                    var diff = &self.box.children.values()[1].widget.git_diff;
-                    diff.focused = self.focused;
-                },
+            for (self.box.children.values()) |*child| {
+                switch (child.widget) {
+                    .git_commit_list => {
+                        child.widget.git_commit_list.focused = (self.getFocus().child_id == child.widget.getFocus().id) and self.focused;
+                    },
+                    .git_diff => {
+                        child.widget.git_diff.focused = (self.getFocus().child_id == child.widget.getFocus().id) and self.focused;
+                    },
+                    else => {},
+                }
             }
             try self.box.build(constraint);
         }
@@ -209,61 +220,50 @@ pub fn GitLog(comptime Widget: type) type {
         pub fn input(self: *GitLog(Widget), key: inp.Key) !void {
             const diff_scroll_x = self.box.children.values()[1].widget.git_diff.box.children.values()[0].widget.scroll.x;
 
-            switch (self.selected) {
-                .commit_list => {
-                    try self.box.children.values()[0].widget.input(key);
-                    try self.updateDiff();
-                },
-                .diff => {
-                    try self.box.children.values()[1].widget.input(key);
-                },
-            }
+            if (self.getFocus().child_id) |child_id| {
+                if (self.box.children.getIndex(child_id)) |current_index| {
+                    const child = &self.box.children.values()[current_index].widget;
+                    var index = current_index;
 
-            switch (key) {
-                .arrow_left => {
-                    switch (self.selected) {
-                        .commit_list => {},
-                        .diff => {
-                            if (diff_scroll_x == 0) {
-                                self.selected = .commit_list;
-                                self.updatePriority();
+                    switch (key) {
+                        .arrow_left => {
+                            if (child.* == .git_diff and diff_scroll_x == 0) {
+                                index = 0;
                             }
                         },
-                    }
-                },
-                .arrow_right => {
-                    switch (self.selected) {
-                        .commit_list => {
-                            self.selected = .diff;
-                            self.updatePriority();
+                        .arrow_right => {
+                            if (child.* == .git_commit_list) {
+                                index = 1;
+                            }
                         },
-                        .diff => {},
-                    }
-                },
-                .codepoint => {
-                    switch (key.codepoint) {
-                        13 => {
-                            switch (self.selected) {
-                                .commit_list => {
-                                    self.selected = .diff;
-                                    self.updatePriority();
+                        .codepoint => {
+                            switch (key.codepoint) {
+                                13 => {
+                                    if (child.* == .git_commit_list) {
+                                        index = 1;
+                                    }
                                 },
-                                .diff => {},
-                            }
-                        },
-                        127, '\x1B' => {
-                            switch (self.selected) {
-                                .commit_list => {},
-                                .diff => {
-                                    self.selected = .commit_list;
-                                    self.updatePriority();
+                                127, '\x1B' => {
+                                    if (child.* == .git_diff) {
+                                        index = 0;
+                                    }
                                 },
+                                else => {},
                             }
                         },
-                        else => {},
+                        else => {
+                            try child.input(key);
+                            if (child.* == .git_commit_list) {
+                                try self.updateDiff();
+                            }
+                        },
                     }
-                },
-                else => {},
+
+                    if (index != current_index) {
+                        self.getFocus().child_id = self.box.children.keys()[index];
+                        self.updatePriority(index);
+                    }
+                }
             }
         }
 
@@ -280,55 +280,64 @@ pub fn GitLog(comptime Widget: type) type {
         }
 
         pub fn scrolledToTop(self: GitLog(Widget)) bool {
-            switch (self.selected) {
-                .commit_list => {
-                    const commit_list = &self.box.children.values()[0].widget.git_commit_list;
-                    return commit_list.selected == 0;
-                },
-                .diff => {
-                    const diff = &self.box.children.values()[1].widget.git_diff;
-                    return diff.getScrollY() == 0;
-                },
+            if (self.box.focus.child_id) |child_id| {
+                if (self.box.children.getIndex(child_id)) |current_index| {
+                    const child = &self.box.children.values()[current_index].widget;
+                    switch (child.*) {
+                        .git_commit_list => {
+                            const commit_list = &child.git_commit_list;
+                            if (commit_list.getSelectedIndex()) |commit_index| {
+                                return commit_index == 0;
+                            }
+                        },
+                        .git_diff => {
+                            const diff = &child.git_diff;
+                            return diff.getScrollY() == 0;
+                        },
+                        else => {},
+                    }
+                }
             }
+            return true;
         }
 
         fn updateDiff(self: *GitLog(Widget)) !void {
             const commit_list = &self.box.children.values()[0].widget.git_commit_list;
+            if (commit_list.getSelectedIndex()) |commit_index| {
+                const commit = commit_list.commits.items[commit_index];
 
-            const commit = commit_list.commits.items[commit_list.selected];
+                const commit_oid = c.git_commit_tree_id(commit);
+                var commit_tree: ?*c.git_tree = null;
+                std.debug.assert(0 == c.git_tree_lookup(&commit_tree, self.repo, commit_oid));
+                defer c.git_tree_free(commit_tree);
 
-            const commit_oid = c.git_commit_tree_id(commit);
-            var commit_tree: ?*c.git_tree = null;
-            std.debug.assert(0 == c.git_tree_lookup(&commit_tree, self.repo, commit_oid));
-            defer c.git_tree_free(commit_tree);
+                var prev_commit_tree: ?*c.git_tree = null;
 
-            var prev_commit_tree: ?*c.git_tree = null;
+                if (commit_index < commit_list.commits.items.len - 1) {
+                    const prev_commit = commit_list.commits.items[commit_index + 1];
+                    const prev_commit_oid = c.git_commit_tree_id(prev_commit);
+                    std.debug.assert(0 == c.git_tree_lookup(&prev_commit_tree, self.repo, prev_commit_oid));
+                }
+                defer if (prev_commit_tree) |ptr| c.git_tree_free(ptr);
 
-            if (commit_list.selected < commit_list.commits.items.len - 1) {
-                const prev_commit = commit_list.commits.items[commit_list.selected + 1];
-                const prev_commit_oid = c.git_commit_tree_id(prev_commit);
-                std.debug.assert(0 == c.git_tree_lookup(&prev_commit_tree, self.repo, prev_commit_oid));
-            }
-            defer if (prev_commit_tree) |ptr| c.git_tree_free(ptr);
+                var commit_diff: ?*c.git_diff = null;
+                std.debug.assert(0 == c.git_diff_tree_to_tree(&commit_diff, self.repo, prev_commit_tree, commit_tree, null));
+                defer c.git_diff_free(commit_diff);
 
-            var commit_diff: ?*c.git_diff = null;
-            std.debug.assert(0 == c.git_diff_tree_to_tree(&commit_diff, self.repo, prev_commit_tree, commit_tree, null));
-            defer c.git_diff_free(commit_diff);
+                var diff = &self.box.children.values()[1].widget.git_diff;
+                try diff.clearDiffs();
 
-            var diff = &self.box.children.values()[1].widget.git_diff;
-            try diff.clearDiffs();
-
-            const delta_count = c.git_diff_num_deltas(commit_diff);
-            for (0..delta_count) |delta_index| {
-                var patch: ?*c.git_patch = null;
-                std.debug.assert(0 == c.git_patch_from_diff(&patch, commit_diff, delta_index));
-                defer c.git_patch_free(patch);
-                try diff.addDiff(patch);
+                const delta_count = c.git_diff_num_deltas(commit_diff);
+                for (0..delta_count) |delta_index| {
+                    var patch: ?*c.git_patch = null;
+                    std.debug.assert(0 == c.git_patch_from_diff(&patch, commit_diff, delta_index));
+                    defer c.git_patch_free(patch);
+                    try diff.addDiff(patch);
+                }
             }
         }
 
-        fn updatePriority(self: *GitLog(Widget)) void {
-            const selected_index = @intFromEnum(self.selected);
+        fn updatePriority(self: *GitLog(Widget), selected_index: usize) void {
             for (self.box.children.values(), 0..) |*child, i| {
                 if (child.visibility) |*vis| {
                     const ii: isize = @intCast(i);
