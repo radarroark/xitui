@@ -45,7 +45,7 @@ pub fn GitCommitList(comptime Widget: type) type {
                 var text_box = try wgt.TextBox(Widget).init(allocator, line, .hidden);
                 errdefer text_box.deinit();
                 text_box.getFocus().focusable = true;
-                try inner_box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .visibility = null });
+                try inner_box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .min_size = null });
             }
 
             // init scroll
@@ -175,7 +175,7 @@ pub fn GitLog(comptime Widget: type) type {
             {
                 var commit_list = try GitCommitList(Widget).init(allocator, repo);
                 errdefer commit_list.deinit();
-                try box.children.put(commit_list.getFocus().id, .{ .widget = .{ .git_commit_list = commit_list }, .rect = null, .visibility = .{ .min_size = .{ .width = 30, .height = null } } });
+                try box.children.put(commit_list.getFocus().id, .{ .widget = .{ .git_commit_list = commit_list }, .rect = null, .min_size = .{ .width = 30, .height = null } });
             }
 
             // add diff
@@ -183,7 +183,7 @@ pub fn GitLog(comptime Widget: type) type {
                 var diff = try g_diff.GitDiff(Widget).init(allocator, repo);
                 errdefer diff.deinit();
                 diff.getFocus().focusable = true;
-                try box.children.put(diff.getFocus().id, .{ .widget = .{ .git_diff = diff }, .rect = null, .visibility = .{ .min_size = .{ .width = 60, .height = null } } });
+                try box.children.put(diff.getFocus().id, .{ .widget = .{ .git_diff = diff }, .rect = null, .min_size = .{ .width = 60, .height = null } });
             }
 
             var git_log = GitLog(Widget){

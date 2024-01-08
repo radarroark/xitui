@@ -26,7 +26,7 @@ pub fn GitDiff(comptime Widget: type) type {
 
             var outer_box = try wgt.Box(Widget).init(allocator, .single, .vert);
             errdefer outer_box.deinit();
-            try outer_box.children.put(outer_box.getFocus().id, .{ .widget = .{ .scroll = scroll }, .rect = null, .visibility = null });
+            try outer_box.children.put(outer_box.getFocus().id, .{ .widget = .{ .scroll = scroll }, .rect = null, .min_size = null });
 
             return .{
                 .box = outer_box,
@@ -171,7 +171,7 @@ pub fn GitDiff(comptime Widget: type) type {
             // add new diff widget
             var text_box = try wgt.TextBox(Widget).init(self.allocator, std.mem.sliceTo(buf.ptr, 0), .hidden);
             errdefer text_box.deinit();
-            try self.box.children.values()[0].widget.scroll.child.box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .visibility = null });
+            try self.box.children.values()[0].widget.scroll.child.box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .min_size = null });
         }
 
         pub fn getScrollX(self: GitDiff(Widget)) isize {

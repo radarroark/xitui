@@ -31,7 +31,7 @@ pub fn GitUITabs(comptime Widget: type) type {
                 var text_box = try wgt.TextBox(Widget).init(allocator, name, .single);
                 errdefer text_box.deinit();
                 text_box.getFocus().focusable = true;
-                try box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .visibility = null });
+                try box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .min_size = null });
             }
 
             var git_ui_tabs = GitUITabs(Widget){
@@ -198,7 +198,7 @@ pub fn GitUI(comptime Widget: type) type {
                     .tabs => {
                         var git_ui_tabs = try GitUITabs(Widget).init(allocator);
                         errdefer git_ui_tabs.deinit();
-                        try box.children.put(git_ui_tabs.getFocus().id, .{ .widget = .{ .git_ui_tabs = git_ui_tabs }, .rect = null, .visibility = null });
+                        try box.children.put(git_ui_tabs.getFocus().id, .{ .widget = .{ .git_ui_tabs = git_ui_tabs }, .rect = null, .min_size = null });
                     },
                     .stack => {
                         var stack = GitUIStack(Widget).init(allocator);
@@ -218,7 +218,7 @@ pub fn GitUI(comptime Widget: type) type {
                             try stack.children.put(git_status.getFocus().id, .{ .git_status = git_status });
                         }
 
-                        try box.children.put(stack.getFocus().id, .{ .widget = .{ .git_ui_stack = stack }, .rect = null, .visibility = null });
+                        try box.children.put(stack.getFocus().id, .{ .widget = .{ .git_ui_stack = stack }, .rect = null, .min_size = null });
                     },
                 }
             }

@@ -79,9 +79,7 @@ pub fn Box(comptime Widget: type) type {
         pub const Child = struct {
             widget: Widget,
             rect: ?layout.IRect,
-            visibility: ?struct {
-                min_size: layout.MaybeSize,
-            },
+            min_size: ?layout.MaybeSize,
         };
 
         pub const BorderStyle = enum {
@@ -141,8 +139,8 @@ pub fn Box(comptime Widget: type) type {
                 pub fn lessThan(ctx: @This(), a_index: usize, b_index: usize) bool {
                     const a = &ctx.values[a_index];
                     const b = &ctx.values[b_index];
-                    if (a.visibility) |_| {
-                        if (b.visibility) |_| {
+                    if (a.min_size) |_| {
+                        if (b.min_size) |_| {
                             const ia: isize = @intCast(a_index);
                             const ib: isize = @intCast(b_index);
                             const a_priority = if (ia <= ctx.selected_index) ia else -ia;
@@ -170,16 +168,16 @@ pub fn Box(comptime Widget: type) type {
 
                 if (remaining_width_maybe) |remaining_width| {
                     if (remaining_width <= 0) continue;
-                    if (child.visibility) |vis| {
-                        if (vis.min_size.width) |min_width| {
+                    if (child.min_size) |min_size| {
+                        if (min_size.width) |min_width| {
                             if (remaining_width < min_width) continue;
                         }
                     }
                 }
                 if (remaining_height_maybe) |remaining_height| {
                     if (remaining_height <= 0) continue;
-                    if (child.visibility) |vis| {
-                        if (vis.min_size.height) |min_height| {
+                    if (child.min_size) |min_size| {
+                        if (min_size.height) |min_height| {
                             if (remaining_height < min_height) continue;
                         }
                     }
@@ -189,15 +187,15 @@ pub fn Box(comptime Widget: type) type {
                 var expected_remaining_width_maybe = remaining_width_maybe;
                 var expected_remaining_height_maybe = remaining_height_maybe;
                 var child_min_size: layout.MaybeSize = .{ .width = null, .height = null };
-                if (child.visibility) |vis| {
-                    child_min_size = vis.min_size;
+                if (child.min_size) |min_size| {
+                    child_min_size = min_size;
                     if (expected_remaining_width_maybe) |*expected_remaining_width| {
-                        if (vis.min_size.width) |min_width| {
+                        if (min_size.width) |min_width| {
                             for (sorted_child_index + 1..sorted_children.count()) |next_sorted_child_index| {
                                 const next_child_index = sorted_children.keys()[next_sorted_child_index];
                                 const next_child = &self.children.values()[next_child_index];
-                                if (next_child.visibility) |next_vis| {
-                                    if (next_vis.min_size.width) |next_min_width| {
+                                if (next_child.min_size) |next_min_size| {
+                                    if (next_min_size.width) |next_min_width| {
                                         if (expected_remaining_width.* >= min_width + next_min_width) {
                                             expected_remaining_width.* -= next_min_width;
                                         }
@@ -207,12 +205,12 @@ pub fn Box(comptime Widget: type) type {
                         }
                     }
                     if (expected_remaining_height_maybe) |*expected_remaining_height| {
-                        if (vis.min_size.height) |min_height| {
+                        if (min_size.height) |min_height| {
                             for (sorted_child_index + 1..sorted_children.count()) |next_sorted_child_index| {
                                 const next_child_index = sorted_children.keys()[next_sorted_child_index];
                                 const next_child = &self.children.values()[next_child_index];
-                                if (next_child.visibility) |next_vis| {
-                                    if (next_vis.min_size.height) |next_min_height| {
+                                if (next_child.min_size) |next_min_size| {
+                                    if (next_min_size.height) |next_min_height| {
                                         if (expected_remaining_height.* >= min_height + next_min_height) {
                                             expected_remaining_height.* -= next_min_height;
                                         }
@@ -392,7 +390,7 @@ pub fn TextBox(comptime Widget: type) type {
             for (lines.items) |line| {
                 var text = Text(Widget).init(allocator, line.items);
                 errdefer text.deinit();
-                try box.children.put(text.getFocus().id, .{ .widget = .{ .text = text }, .rect = null, .visibility = null });
+                try box.children.put(text.getFocus().id, .{ .widget = .{ .text = text }, .rect = null, .min_size = null });
             }
 
             return .{
