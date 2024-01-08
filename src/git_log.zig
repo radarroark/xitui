@@ -175,7 +175,7 @@ pub fn GitLog(comptime Widget: type) type {
             {
                 var commit_list = try GitCommitList(Widget).init(allocator, repo);
                 errdefer commit_list.deinit();
-                try box.children.put(commit_list.getFocus().id, .{ .widget = .{ .git_commit_list = commit_list }, .rect = null, .visibility = .{ .min_size = .{ .width = 30, .height = null }, .priority = 1 } });
+                try box.children.put(commit_list.getFocus().id, .{ .widget = .{ .git_commit_list = commit_list }, .rect = null, .visibility = .{ .min_size = .{ .width = 30, .height = null } } });
             }
 
             // add diff
@@ -183,7 +183,7 @@ pub fn GitLog(comptime Widget: type) type {
                 var diff = try g_diff.GitDiff(Widget).init(allocator, repo);
                 errdefer diff.deinit();
                 diff.getFocus().focusable = true;
-                try box.children.put(diff.getFocus().id, .{ .widget = .{ .git_diff = diff }, .rect = null, .visibility = .{ .min_size = .{ .width = 60, .height = null }, .priority = 0 } });
+                try box.children.put(diff.getFocus().id, .{ .widget = .{ .git_diff = diff }, .rect = null, .visibility = .{ .min_size = .{ .width = 60, .height = null } } });
             }
 
             var git_log = GitLog(Widget){
@@ -261,7 +261,6 @@ pub fn GitLog(comptime Widget: type) type {
 
                     if (index != current_index) {
                         self.getFocus().child_id = self.box.children.keys()[index];
-                        self.updatePriority(index);
                     }
                 }
             }
@@ -333,15 +332,6 @@ pub fn GitLog(comptime Widget: type) type {
                     std.debug.assert(0 == c.git_patch_from_diff(&patch, commit_diff, delta_index));
                     defer c.git_patch_free(patch);
                     try diff.addDiff(patch);
-                }
-            }
-        }
-
-        fn updatePriority(self: *GitLog(Widget), selected_index: usize) void {
-            for (self.box.children.values(), 0..) |*child, i| {
-                if (child.visibility) |*vis| {
-                    const ii: isize = @intCast(i);
-                    vis.priority = if (ii <= selected_index) ii else -ii;
                 }
             }
         }

@@ -365,14 +365,14 @@ pub fn GitStatusContent(comptime Widget: type) type {
                         var status_list = try GitStatusList(Widget).init(allocator, filtered_statuses.items);
                         errdefer status_list.deinit();
                         status_list.focused = true;
-                        try box.children.put(status_list.getFocus().id, .{ .widget = .{ .git_status_list = status_list }, .rect = null, .visibility = .{ .min_size = .{ .width = 20, .height = null }, .priority = 1 } });
+                        try box.children.put(status_list.getFocus().id, .{ .widget = .{ .git_status_list = status_list }, .rect = null, .visibility = .{ .min_size = .{ .width = 20, .height = null } } });
                     },
                     .diff => {
                         var diff = try g_diff.GitDiff(Widget).init(allocator, repo);
                         errdefer diff.deinit();
                         diff.getFocus().focusable = true;
                         diff.focused = false;
-                        try box.children.put(diff.getFocus().id, .{ .widget = .{ .git_diff = diff }, .rect = null, .visibility = .{ .min_size = .{ .width = 60, .height = null }, .priority = 0 } });
+                        try box.children.put(diff.getFocus().id, .{ .widget = .{ .git_diff = diff }, .rect = null, .visibility = .{ .min_size = .{ .width = 60, .height = null } } });
                     },
                 }
             }
@@ -453,13 +453,12 @@ pub fn GitStatusContent(comptime Widget: type) type {
                         },
                     }
 
-                    if (index == @intFromEnum(FocusKind.diff) and self.box.children.values()[1].widget.git_diff.getGrid() == null) {
+                    if (index == @intFromEnum(FocusKind.diff) and self.box.children.values()[@intFromEnum(FocusKind.diff)].widget.git_diff.isEmpty()) {
                         index = @intFromEnum(FocusKind.status_list);
                     }
 
                     if (index != current_index) {
                         self.getFocus().child_id = self.box.children.keys()[index];
-                        self.updatePriority(index);
                     }
                 }
             }
@@ -559,15 +558,6 @@ pub fn GitStatusContent(comptime Widget: type) type {
                 // update widget
                 if (patch_maybe) |patch| {
                     try diff.addDiff(patch);
-                }
-            }
-        }
-
-        fn updatePriority(self: *GitStatusContent(Widget), selected_index: usize) void {
-            for (self.box.children.values(), 0..) |*child, i| {
-                if (child.visibility) |*vis| {
-                    const ii: isize = @intCast(i);
-                    vis.priority = if (ii <= selected_index) ii else -ii;
                 }
             }
         }

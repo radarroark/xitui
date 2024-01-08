@@ -181,5 +181,9 @@ pub fn GitDiff(comptime Widget: type) type {
         pub fn getScrollY(self: GitDiff(Widget)) isize {
             return self.box.children.values()[0].widget.scroll.y;
         }
+
+        pub fn isEmpty(self: GitDiff(Widget)) bool {
+            return self.bufs.items.len == 0;
+        }
     };
 }

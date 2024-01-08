@@ -81,7 +81,6 @@ pub fn Box(comptime Widget: type) type {
             rect: ?layout.IRect,
             visibility: ?struct {
                 min_size: layout.MaybeSize,
-                priority: isize,
             },
         };
 
@@ -137,18 +136,28 @@ pub fn Box(comptime Widget: type) type {
             }
             const SortCtx = struct {
                 values: []Child,
+                selected_index: usize,
+
                 pub fn lessThan(ctx: @This(), a_index: usize, b_index: usize) bool {
                     const a = &ctx.values[a_index];
                     const b = &ctx.values[b_index];
-                    if (a.visibility) |a_vis| {
-                        if (b.visibility) |b_vis| {
-                            return a_vis.priority > b_vis.priority;
+                    if (a.visibility) |_| {
+                        if (b.visibility) |_| {
+                            const ia: isize = @intCast(a_index);
+                            const ib: isize = @intCast(b_index);
+                            const a_priority = if (ia <= ctx.selected_index) ia else -ia;
+                            const b_priority = if (ib <= ctx.selected_index) ib else -ib;
+                            return a_priority > b_priority;
                         }
                     }
                     return false;
                 }
             };
-            sorted_children.sort(SortCtx{ .values = sorted_children.values() });
+            if (self.getFocus().child_id) |child_id| {
+                if (self.children.getIndex(child_id)) |index| {
+                    sorted_children.sort(SortCtx{ .values = sorted_children.values(), .selected_index = index });
+                }
+            }
 
             var width: usize = 0;
             var height: usize = 0;
