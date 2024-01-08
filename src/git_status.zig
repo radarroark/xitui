@@ -151,41 +151,42 @@ pub fn GitStatusList(comptime Widget: type) type {
             if (self.getFocus().child_id) |child_id| {
                 const children = &self.scroll.child.box.children;
                 if (children.getIndex(child_id)) |current_index| {
-                    var index = current_index;
-
-                    switch (key) {
-                        .arrow_up => {
-                            index -|= 1;
-                        },
-                        .arrow_down => {
-                            if (index + 1 < children.count()) {
-                                index += 1;
-                            }
-                        },
-                        .home => {
-                            index = 0;
-                        },
-                        .end => {
-                            if (children.count() > 0) {
-                                index = children.count() - 1;
-                            }
-                        },
-                        .page_up => {
-                            if (self.getGrid()) |grid| {
-                                const half_count = (grid.size.height / 3) / 2;
-                                index -|= half_count;
-                            }
-                        },
-                        .page_down => {
-                            if (self.getGrid()) |grid| {
-                                if (children.count() > 0) {
-                                    const half_count = (grid.size.height / 3) / 2;
-                                    index = @min(index + half_count, children.count() - 1);
+                    const index = blk: {
+                        switch (key) {
+                            .arrow_up => {
+                                break :blk current_index - 1;
+                            },
+                            .arrow_down => {
+                                if (current_index + 1 < children.count()) {
+                                    break :blk current_index + 1;
                                 }
-                            }
-                        },
-                        else => {},
-                    }
+                            },
+                            .home => {
+                                break :blk 0;
+                            },
+                            .end => {
+                                if (children.count() > 0) {
+                                    break :blk children.count() - 1;
+                                }
+                            },
+                            .page_up => {
+                                if (self.getGrid()) |grid| {
+                                    const half_count = (grid.size.height / 3) / 2;
+                                    break :blk current_index - half_count;
+                                }
+                            },
+                            .page_down => {
+                                if (self.getGrid()) |grid| {
+                                    if (children.count() > 0) {
+                                        const half_count = (grid.size.height / 3) / 2;
+                                        break :blk @min(current_index + half_count, children.count() - 1);
+                                    }
+                                }
+                            },
+                            else => {},
+                        }
+                        break :blk current_index;
+                    };
 
                     if (index != current_index) {
                         self.getFocus().child_id = children.keys()[index];
@@ -293,19 +294,20 @@ pub fn GitStatusTabs(comptime Widget: type) type {
             if (self.getFocus().child_id) |child_id| {
                 const children = &self.box.children;
                 if (children.getIndex(child_id)) |current_index| {
-                    var index = current_index;
-
-                    switch (key) {
-                        .arrow_left => {
-                            index -|= 1;
-                        },
-                        .arrow_right => {
-                            if (index + 1 < children.count()) {
-                                index +|= 1;
-                            }
-                        },
-                        else => {},
-                    }
+                    const index = blk: {
+                        switch (key) {
+                            .arrow_left => {
+                                break :blk current_index - 1;
+                            },
+                            .arrow_right => {
+                                if (current_index + 1 < children.count()) {
+                                    break :blk current_index + 1;
+                                }
+                            },
+                            else => {},
+                        }
+                        break :blk current_index;
+                    };
 
                     if (index != current_index) {
                         self.getFocus().child_id = children.keys()[index];
@@ -417,41 +419,42 @@ pub fn GitStatusContent(comptime Widget: type) type {
             if (self.getFocus().child_id) |child_id| {
                 if (self.box.children.getIndex(child_id)) |current_index| {
                     const child = &self.box.children.values()[current_index].widget;
-                    var index = current_index;
 
-                    switch (key) {
-                        .arrow_left => {
-                            if (child.* == .git_diff and diff_scroll_x == 0) {
-                                index = @intFromEnum(FocusKind.status_list);
-                            }
-                        },
-                        .arrow_right => {
-                            if (child.* == .git_status_list) {
-                                index = @intFromEnum(FocusKind.diff);
-                            }
-                        },
-                        .codepoint => {
-                            switch (key.codepoint) {
-                                13 => {
-                                    if (child.* == .git_status_list) {
-                                        index = @intFromEnum(FocusKind.status_list);
-                                    }
-                                },
-                                127, '\x1B' => {
-                                    if (child.* == .git_diff) {
-                                        index = @intFromEnum(FocusKind.diff);
-                                    }
-                                },
-                                else => {},
-                            }
-                        },
-                        else => {
-                            try child.input(key);
-                            if (child.* == .git_status_list) {
-                                try self.updateDiff();
-                            }
-                        },
-                    }
+                    var index = blk: {
+                        switch (key) {
+                            .arrow_left => {
+                                if (child.* == .git_diff and diff_scroll_x == 0) {
+                                    break :blk @intFromEnum(FocusKind.status_list);
+                                }
+                            },
+                            .arrow_right => {
+                                if (child.* == .git_status_list) {
+                                    break :blk @intFromEnum(FocusKind.diff);
+                                }
+                            },
+                            .codepoint => {
+                                switch (key.codepoint) {
+                                    13 => {
+                                        if (child.* == .git_status_list) {
+                                            break :blk @intFromEnum(FocusKind.status_list);
+                                        }
+                                    },
+                                    127, '\x1B' => {
+                                        if (child.* == .git_diff) {
+                                            break :blk @intFromEnum(FocusKind.diff);
+                                        }
+                                    },
+                                    else => {},
+                                }
+                            },
+                            else => {},
+                        }
+                        try child.input(key);
+                        if (child.* == .git_status_list) {
+                            try self.updateDiff();
+                        }
+                        break :blk current_index;
+                    };
 
                     if (index == @intFromEnum(FocusKind.diff) and self.box.children.values()[@intFromEnum(FocusKind.diff)].widget.git_diff.isEmpty()) {
                         index = @intFromEnum(FocusKind.status_list);
@@ -677,29 +680,31 @@ pub fn GitStatus(comptime Widget: type) type {
             if (self.getFocus().child_id) |child_id| {
                 if (self.box.children.getIndex(child_id)) |current_index| {
                     const child = &self.box.children.values()[current_index].widget;
-                    var index = current_index;
 
-                    switch (child.*) {
-                        .git_status_tabs => {
-                            const status_tabs = &child.git_status_tabs;
-                            if (key == .arrow_down) {
-                                index = @intFromEnum(FocusKind.status_content);
-                            } else {
-                                try status_tabs.input(key);
-                            }
-                        },
-                        .git_ui_stack => {
-                            const stack = &child.git_ui_stack;
-                            if (stack.getSelected()) |selected_widget| {
-                                if (key == .arrow_up and selected_widget.git_status_content.scrolledToTop()) {
-                                    index = @intFromEnum(FocusKind.status_tabs);
+                    var index = blk: {
+                        switch (child.*) {
+                            .git_status_tabs => {
+                                const status_tabs = &child.git_status_tabs;
+                                if (key == .arrow_down) {
+                                    break :blk @intFromEnum(FocusKind.status_content);
                                 } else {
-                                    try stack.input(key);
+                                    try status_tabs.input(key);
                                 }
-                            }
-                        },
-                        else => {},
-                    }
+                            },
+                            .git_ui_stack => {
+                                const stack = &child.git_ui_stack;
+                                if (stack.getSelected()) |selected_widget| {
+                                    if (key == .arrow_up and selected_widget.git_status_content.scrolledToTop()) {
+                                        break :blk @intFromEnum(FocusKind.status_tabs);
+                                    } else {
+                                        try stack.input(key);
+                                    }
+                                }
+                            },
+                            else => {},
+                        }
+                        break :blk current_index;
+                    };
 
                     if (index == @intFromEnum(FocusKind.status_content)) {
                         if (self.box.children.values()[@intFromEnum(FocusKind.status_content)].widget.git_ui_stack.getSelected()) |selected_widget| {

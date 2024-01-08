@@ -223,41 +223,42 @@ pub fn GitLog(comptime Widget: type) type {
             if (self.getFocus().child_id) |child_id| {
                 if (self.box.children.getIndex(child_id)) |current_index| {
                     const child = &self.box.children.values()[current_index].widget;
-                    var index = current_index;
 
-                    switch (key) {
-                        .arrow_left => {
-                            if (child.* == .git_diff and diff_scroll_x == 0) {
-                                index = 0;
-                            }
-                        },
-                        .arrow_right => {
-                            if (child.* == .git_commit_list) {
-                                index = 1;
-                            }
-                        },
-                        .codepoint => {
-                            switch (key.codepoint) {
-                                13 => {
-                                    if (child.* == .git_commit_list) {
-                                        index = 1;
-                                    }
-                                },
-                                127, '\x1B' => {
-                                    if (child.* == .git_diff) {
-                                        index = 0;
-                                    }
-                                },
-                                else => {},
-                            }
-                        },
-                        else => {
-                            try child.input(key);
-                            if (child.* == .git_commit_list) {
-                                try self.updateDiff();
-                            }
-                        },
-                    }
+                    const index = blk: {
+                        switch (key) {
+                            .arrow_left => {
+                                if (child.* == .git_diff and diff_scroll_x == 0) {
+                                    break :blk 0;
+                                }
+                            },
+                            .arrow_right => {
+                                if (child.* == .git_commit_list) {
+                                    break :blk 1;
+                                }
+                            },
+                            .codepoint => {
+                                switch (key.codepoint) {
+                                    13 => {
+                                        if (child.* == .git_commit_list) {
+                                            break :blk 1;
+                                        }
+                                    },
+                                    127, '\x1B' => {
+                                        if (child.* == .git_diff) {
+                                            break :blk 0;
+                                        }
+                                    },
+                                    else => {},
+                                }
+                            },
+                            else => {},
+                        }
+                        try child.input(key);
+                        if (child.* == .git_commit_list) {
+                            try self.updateDiff();
+                        }
+                        break :blk current_index;
+                    };
 
                     if (index != current_index) {
                         self.getFocus().child_id = self.box.children.keys()[index];
