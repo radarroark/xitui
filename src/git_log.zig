@@ -41,7 +41,7 @@ pub fn GitCommitList(comptime Widget: type) type {
             var inner_box = try wgt.Box(Widget).init(allocator, null, .vert);
             errdefer inner_box.deinit();
             for (commits.items) |commit| {
-                const line = std.mem.sliceTo(c.git_commit_message(commit), '\n');
+                const line = std.mem.sliceTo(std.mem.sliceTo(c.git_commit_message(commit), 0), '\n');
                 var text_box = try wgt.TextBox(Widget).init(allocator, line, .hidden);
                 errdefer text_box.deinit();
                 text_box.getFocus().focusable = true;
