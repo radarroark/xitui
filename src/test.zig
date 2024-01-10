@@ -1,4 +1,7 @@
 const std = @import("std");
+const main = @import("./main.zig");
+const g_ui = @import("./git_ui.zig");
+const ndslice = @import("./ndslice.zig");
 
 const c = @cImport({
     @cInclude("git2.h");
@@ -6,11 +9,6 @@ const c = @cImport({
 
 pub fn expectEqual(expected: anytype, actual: anytype) !void {
     try std.testing.expectEqual(@as(@TypeOf(actual), expected), actual);
-}
-
-test {
-    _ = @import("./main.zig");
-    _ = @import("./ndslice.zig");
 }
 
 test "end to end" {
@@ -365,4 +363,27 @@ test "end to end" {
             try std.testing.expect(modified_files.contains("CHANGELOG"));
         }
     }
+
+    // create root widget
+    var root = main.Widget{ .git_ui = try g_ui.GitUI(main.Widget).init(allocator, repo) };
+    defer root.deinit();
+    try root.build(.{
+        .min_size = .{ .width = null, .height = null },
+        .max_size = .{ .width = 200, .height = 50 },
+    });
+
+    // get leaf widget to focus on
+    // (the lazy way of doing it is just to get the largest id)
+    try std.testing.expect(root.getFocus().children.count() > 0);
+    var leaf_id = root.getFocus().id;
+    var key_iter = root.getFocus().children.keyIterator();
+    while (key_iter.next()) |child_id| {
+        if (child_id.* > leaf_id) {
+            leaf_id = child_id.*;
+        }
+    }
+
+    // focus on widget
+    try root.getFocus().setFocus(leaf_id);
+    try std.testing.expect(root.getFocus().focused_children.contains(root.getFocus().id));
 }

@@ -18,7 +18,7 @@ const c = @cImport({
     @cInclude("git2.h");
 });
 
-const Widget = union(enum) {
+pub const Widget = union(enum) {
     text: wgt.Text(Widget),
     box: wgt.Box(Widget),
     text_box: wgt.TextBox(Widget),
