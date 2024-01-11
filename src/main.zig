@@ -41,15 +41,15 @@ pub const Widget = union(enum) {
         }
     }
 
-    pub fn build(self: *Widget, constraint: layout.Constraint) anyerror!void {
+    pub fn build(self: *Widget, constraint: layout.Constraint, root_focus: *Focus) anyerror!void {
         switch (self.*) {
-            inline else => |*case| try case.build(constraint),
+            inline else => |*case| try case.build(constraint, root_focus),
         }
     }
 
-    pub fn input(self: *Widget, key: inp.Key) anyerror!void {
+    pub fn input(self: *Widget, key: inp.Key, root_focus: *Focus) anyerror!void {
         switch (self.*) {
-            inline else => |*case| try case.input(key),
+            inline else => |*case| try case.input(key, root_focus),
         }
     }
 
@@ -116,7 +116,7 @@ fn tick(allocator: std.mem.Allocator, root: *Widget, last_grid_maybe: *?Grid, la
         try root.build(.{
             .min_size = .{ .width = null, .height = null },
             .max_size = .{ .width = root_size.width, .height = root_size.height },
-        });
+        }, root.getFocus());
         try term.clearRect(term.terminal.tty.writer(), 0, 0, root_size);
         last_size.* = root_size;
 
@@ -144,13 +144,13 @@ fn tick(allocator: std.mem.Allocator, root: *Widget, last_grid_maybe: *?Grid, la
         while (iter.nextCodepoint()) |codepoint| {
             const next_bytes = iter.peek(1);
             if (try inp.Key.init(codepoint, if (next_bytes.len == 1) next_bytes[0] else null, &esc)) |key| {
-                try root.input(key);
+                try root.input(key, root.getFocus());
             }
         }
         try root.build(.{
             .min_size = .{ .width = null, .height = null },
             .max_size = .{ .width = root_size.width, .height = root_size.height },
-        });
+        }, root.getFocus());
     }
 }
 

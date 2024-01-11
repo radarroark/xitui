@@ -72,14 +72,15 @@ pub fn GitStatusListItem(comptime Widget: type) type {
             self.box.deinit();
         }
 
-        pub fn build(self: *GitStatusListItem(Widget), constraint: layout.Constraint) !void {
+        pub fn build(self: *GitStatusListItem(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
-            try self.box.build(constraint);
+            try self.box.build(constraint, root_focus);
         }
 
-        pub fn input(self: *GitStatusListItem(Widget), key: inp.Key) !void {
+        pub fn input(self: *GitStatusListItem(Widget), key: inp.Key, root_focus: *Focus) !void {
             _ = self;
             _ = key;
+            _ = root_focus;
         }
 
         pub fn clearGrid(self: *GitStatusListItem(Widget)) void {
@@ -135,7 +136,7 @@ pub fn GitStatusList(comptime Widget: type) type {
             self.scroll.deinit();
         }
 
-        pub fn build(self: *GitStatusList(Widget), constraint: layout.Constraint) !void {
+        pub fn build(self: *GitStatusList(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
             const children = &self.scroll.child.box.children;
             for (children.keys(), children.values()) |id, *item| {
@@ -144,10 +145,10 @@ pub fn GitStatusList(comptime Widget: type) type {
                 else
                     .hidden);
             }
-            try self.scroll.build(constraint);
+            try self.scroll.build(constraint, root_focus);
         }
 
-        pub fn input(self: *GitStatusList(Widget), key: inp.Key) !void {
+        pub fn input(self: *GitStatusList(Widget), key: inp.Key, root_focus: *Focus) !void {
             if (self.getFocus().child_id) |child_id| {
                 const children = &self.scroll.child.box.children;
                 if (children.getIndex(child_id)) |current_index| {
@@ -189,7 +190,7 @@ pub fn GitStatusList(comptime Widget: type) type {
                     };
 
                     if (index != current_index) {
-                        self.getFocus().child_id = children.keys()[index];
+                        try root_focus.setFocus(children.keys()[index]);
                         self.updateScroll(index);
                     }
                 }
@@ -279,7 +280,7 @@ pub fn GitStatusTabs(comptime Widget: type) type {
             self.arena.deinit();
         }
 
-        pub fn build(self: *GitStatusTabs(Widget), constraint: layout.Constraint) !void {
+        pub fn build(self: *GitStatusTabs(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
             for (self.box.children.keys(), self.box.children.values()) |id, *tab| {
                 tab.widget.text_box.border_style = if (self.getFocus().child_id == id)
@@ -287,10 +288,10 @@ pub fn GitStatusTabs(comptime Widget: type) type {
                 else
                     .hidden;
             }
-            try self.box.build(constraint);
+            try self.box.build(constraint, root_focus);
         }
 
-        pub fn input(self: *GitStatusTabs(Widget), key: inp.Key) !void {
+        pub fn input(self: *GitStatusTabs(Widget), key: inp.Key, root_focus: *Focus) !void {
             if (self.getFocus().child_id) |child_id| {
                 const children = &self.box.children;
                 if (children.getIndex(child_id)) |current_index| {
@@ -310,7 +311,7 @@ pub fn GitStatusTabs(comptime Widget: type) type {
                     };
 
                     if (index != current_index) {
-                        self.getFocus().child_id = children.keys()[index];
+                        try root_focus.setFocus(children.keys()[index]);
                     }
                 }
             }
@@ -395,7 +396,7 @@ pub fn GitStatusContent(comptime Widget: type) type {
             self.filtered_statuses.deinit();
         }
 
-        pub fn build(self: *GitStatusContent(Widget), constraint: layout.Constraint) !void {
+        pub fn build(self: *GitStatusContent(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
             for (self.box.children.values()) |*child| {
                 switch (child.widget) {
@@ -409,11 +410,11 @@ pub fn GitStatusContent(comptime Widget: type) type {
                 }
             }
             if (self.filtered_statuses.items.len > 0) {
-                try self.box.build(constraint);
+                try self.box.build(constraint, root_focus);
             }
         }
 
-        pub fn input(self: *GitStatusContent(Widget), key: inp.Key) !void {
+        pub fn input(self: *GitStatusContent(Widget), key: inp.Key, root_focus: *Focus) !void {
             const diff_scroll_x = self.box.children.values()[1].widget.git_diff.getScrollX();
 
             if (self.getFocus().child_id) |child_id| {
@@ -449,7 +450,7 @@ pub fn GitStatusContent(comptime Widget: type) type {
                             },
                             else => {},
                         }
-                        try child.input(key);
+                        try child.input(key, root_focus);
                         if (child.* == .git_status_list) {
                             try self.updateDiff();
                         }
@@ -461,7 +462,7 @@ pub fn GitStatusContent(comptime Widget: type) type {
                     }
 
                     if (index != current_index) {
-                        self.getFocus().child_id = self.box.children.keys()[index];
+                        try root_focus.setFocus(self.box.children.keys()[index]);
                     }
                 }
             }
@@ -664,7 +665,7 @@ pub fn GitStatus(comptime Widget: type) type {
             c.git_status_list_free(self.status_list);
         }
 
-        pub fn build(self: *GitStatus(Widget), constraint: layout.Constraint) !void {
+        pub fn build(self: *GitStatus(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
             var status_tabs = &self.box.children.values()[0].widget.git_status_tabs;
             status_tabs.focused = (self.getFocus().child_id == status_tabs.getFocus().id) and self.focused;
@@ -673,10 +674,10 @@ pub fn GitStatus(comptime Widget: type) type {
             if (status_tabs.getSelectedIndex()) |index| {
                 stack.getFocus().child_id = stack.children.keys()[index];
             }
-            try self.box.build(constraint);
+            try self.box.build(constraint, root_focus);
         }
 
-        pub fn input(self: *GitStatus(Widget), key: inp.Key) !void {
+        pub fn input(self: *GitStatus(Widget), key: inp.Key, root_focus: *Focus) !void {
             if (self.getFocus().child_id) |child_id| {
                 if (self.box.children.getIndex(child_id)) |current_index| {
                     const child = &self.box.children.values()[current_index].widget;
@@ -688,7 +689,7 @@ pub fn GitStatus(comptime Widget: type) type {
                                 if (key == .arrow_down) {
                                     break :blk @intFromEnum(FocusKind.status_content);
                                 } else {
-                                    try status_tabs.input(key);
+                                    try status_tabs.input(key, root_focus);
                                 }
                             },
                             .git_ui_stack => {
@@ -697,7 +698,7 @@ pub fn GitStatus(comptime Widget: type) type {
                                     if (key == .arrow_up and selected_widget.git_status_content.scrolledToTop()) {
                                         break :blk @intFromEnum(FocusKind.status_tabs);
                                     } else {
-                                        try stack.input(key);
+                                        try stack.input(key, root_focus);
                                     }
                                 }
                             },
@@ -715,7 +716,7 @@ pub fn GitStatus(comptime Widget: type) type {
                     }
 
                     if (index != current_index) {
-                        self.getFocus().child_id = self.box.children.keys()[index];
+                        try root_focus.setFocus(self.box.children.keys()[index]);
                     }
                 }
             }

@@ -45,15 +45,16 @@ pub fn GitDiff(comptime Widget: type) type {
             self.box.deinit();
         }
 
-        pub fn build(self: *GitDiff(Widget), constraint: layout.Constraint) !void {
+        pub fn build(self: *GitDiff(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
             self.box.border_style = if (self.focused) .double else .single;
             if (self.bufs.items.len > 0) {
-                try self.box.build(constraint);
+                try self.box.build(constraint, root_focus);
             }
         }
 
-        pub fn input(self: *GitDiff(Widget), key: inp.Key) !void {
+        pub fn input(self: *GitDiff(Widget), key: inp.Key, root_focus: *Focus) !void {
+            _ = root_focus;
             switch (key) {
                 .arrow_up => {
                     if (self.box.children.values()[0].widget.scroll.y > 0) {

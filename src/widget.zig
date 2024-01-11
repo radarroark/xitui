@@ -28,7 +28,8 @@ pub fn Text(comptime Widget: type) type {
             }
         }
 
-        pub fn build(self: *Text(Widget), constraint: layout.Constraint) !void {
+        pub fn build(self: *Text(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
+            _ = root_focus;
             self.clearGrid();
             const width = try std.unicode.utf8CountCodepoints(self.content);
             var grid = try Grid.init(self.allocator, .{ .width = @max(1, @min(width, constraint.max_size.width orelse width)), .height = 1 });
@@ -45,9 +46,10 @@ pub fn Text(comptime Widget: type) type {
             self.grid = grid;
         }
 
-        pub fn input(self: *Text(Widget), key: inp.Key) !void {
+        pub fn input(self: *Text(Widget), key: inp.Key, root_focus: *Focus) !void {
             _ = self;
             _ = key;
+            _ = root_focus;
         }
 
         pub fn clearGrid(self: *Text(Widget)) void {
@@ -116,7 +118,7 @@ pub fn Box(comptime Widget: type) type {
             self.children.deinit();
         }
 
-        pub fn build(self: *Box(Widget), constraint: layout.Constraint) !void {
+        pub fn build(self: *Box(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
 
             const border_size: usize = if (self.border_style) |_| 1 else 0;
@@ -224,7 +226,7 @@ pub fn Box(comptime Widget: type) type {
                 try child.widget.build(.{
                     .min_size = child_min_size,
                     .max_size = .{ .width = expected_remaining_width_maybe, .height = expected_remaining_height_maybe },
-                });
+                }, root_focus);
 
                 if (child.widget.getGrid()) |child_grid| {
                     switch (self.direction) {
@@ -330,9 +332,9 @@ pub fn Box(comptime Widget: type) type {
             self.grid = grid;
         }
 
-        pub fn input(self: *Box(Widget), key: inp.Key) !void {
+        pub fn input(self: *Box(Widget), key: inp.Key, root_focus: *Focus) !void {
             for (self.children.values()) |*child| {
-                try child.widget.input(key);
+                try child.widget.input(key, root_focus);
             }
         }
 
@@ -409,14 +411,14 @@ pub fn TextBox(comptime Widget: type) type {
             self.lines.deinit();
         }
 
-        pub fn build(self: *TextBox(Widget), constraint: layout.Constraint) !void {
+        pub fn build(self: *TextBox(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
             self.box.border_style = self.border_style;
-            try self.box.build(constraint);
+            try self.box.build(constraint, root_focus);
         }
 
-        pub fn input(self: *TextBox(Widget), key: inp.Key) !void {
-            try self.box.input(key);
+        pub fn input(self: *TextBox(Widget), key: inp.Key, root_focus: *Focus) !void {
+            try self.box.input(key, root_focus);
         }
 
         pub fn clearGrid(self: *TextBox(Widget)) void {
@@ -471,7 +473,7 @@ pub fn Scroll(comptime Widget: type) type {
             self.allocator.destroy(self.child);
         }
 
-        pub fn build(self: *Scroll(Widget), constraint: layout.Constraint) !void {
+        pub fn build(self: *Scroll(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
             const child_constraint: layout.Constraint = switch (self.direction) {
                 .vert => .{
@@ -487,7 +489,7 @@ pub fn Scroll(comptime Widget: type) type {
                     .max_size = .{ .width = null, .height = null },
                 },
             };
-            try self.child.build(child_constraint);
+            try self.child.build(child_constraint, root_focus);
             if (self.child.getGrid()) |child_grid| {
                 self.grid = try Grid.initFromGrid(self.allocator, child_grid, .{
                     .width = @max(1, @min(child_grid.size.width, constraint.max_size.width orelse child_grid.size.width)),
@@ -496,8 +498,8 @@ pub fn Scroll(comptime Widget: type) type {
             }
         }
 
-        pub fn input(self: *Scroll(Widget), key: inp.Key) !void {
-            try self.child.input(key);
+        pub fn input(self: *Scroll(Widget), key: inp.Key, root_focus: *Focus) !void {
+            try self.child.input(key, root_focus);
         }
 
         pub fn clearGrid(self: *Scroll(Widget)) void {

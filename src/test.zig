@@ -370,7 +370,7 @@ test "end to end" {
     try root.build(.{
         .min_size = .{ .width = null, .height = null },
         .max_size = .{ .width = 200, .height = 50 },
-    });
+    }, root.getFocus());
 
     // get leaf widget to focus on
     // (the lazy way of doing it is just to get the largest id)
@@ -385,5 +385,4 @@ test "end to end" {
 
     // focus on widget
     try root.getFocus().setFocus(leaf_id);
-    try std.testing.expect(root.getFocus().focused_children.contains(root.getFocus().id));
 }

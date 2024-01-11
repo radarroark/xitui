@@ -71,7 +71,7 @@ pub fn GitCommitList(comptime Widget: type) type {
             self.scroll.deinit();
         }
 
-        pub fn build(self: *GitCommitList(Widget), constraint: layout.Constraint) !void {
+        pub fn build(self: *GitCommitList(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
             const children = &self.scroll.child.box.children;
             for (children.keys(), children.values()) |id, *commit| {
@@ -80,10 +80,10 @@ pub fn GitCommitList(comptime Widget: type) type {
                 else
                     .hidden;
             }
-            try self.scroll.build(constraint);
+            try self.scroll.build(constraint, root_focus);
         }
 
-        pub fn input(self: *GitCommitList(Widget), key: inp.Key) !void {
+        pub fn input(self: *GitCommitList(Widget), key: inp.Key, root_focus: *Focus) !void {
             if (self.getFocus().child_id) |child_id| {
                 const children = &self.scroll.child.box.children;
                 if (children.getIndex(child_id)) |current_index| {
@@ -124,7 +124,7 @@ pub fn GitCommitList(comptime Widget: type) type {
                     }
 
                     if (index != current_index) {
-                        self.getFocus().child_id = children.keys()[index];
+                        try root_focus.setFocus(children.keys()[index]);
                         self.updateScroll(index);
                     }
                 }
@@ -201,7 +201,7 @@ pub fn GitLog(comptime Widget: type) type {
             self.box.deinit();
         }
 
-        pub fn build(self: *GitLog(Widget), constraint: layout.Constraint) !void {
+        pub fn build(self: *GitLog(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
             for (self.box.children.values()) |*child| {
                 switch (child.widget) {
@@ -214,10 +214,10 @@ pub fn GitLog(comptime Widget: type) type {
                     else => {},
                 }
             }
-            try self.box.build(constraint);
+            try self.box.build(constraint, root_focus);
         }
 
-        pub fn input(self: *GitLog(Widget), key: inp.Key) !void {
+        pub fn input(self: *GitLog(Widget), key: inp.Key, root_focus: *Focus) !void {
             const diff_scroll_x = self.box.children.values()[1].widget.git_diff.box.children.values()[0].widget.scroll.x;
 
             if (self.getFocus().child_id) |child_id| {
@@ -253,7 +253,7 @@ pub fn GitLog(comptime Widget: type) type {
                             },
                             else => {},
                         }
-                        try child.input(key);
+                        try child.input(key, root_focus);
                         if (child.* == .git_commit_list) {
                             try self.updateDiff();
                         }
@@ -261,7 +261,7 @@ pub fn GitLog(comptime Widget: type) type {
                     };
 
                     if (index != current_index) {
-                        self.getFocus().child_id = self.box.children.keys()[index];
+                        try root_focus.setFocus(self.box.children.keys()[index]);
                     }
                 }
             }
