@@ -15,7 +15,6 @@ pub fn GitDiff(comptime Widget: type) type {
         allocator: std.mem.Allocator,
         repo: ?*c.git_repository,
         bufs: std.ArrayList(c.git_buf),
-        focused: bool,
 
         pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository) !GitDiff(Widget) {
             var inner_box = try wgt.Box(Widget).init(allocator, null, .vert);
@@ -33,7 +32,6 @@ pub fn GitDiff(comptime Widget: type) type {
                 .allocator = allocator,
                 .repo = repo,
                 .bufs = std.ArrayList(c.git_buf).init(allocator),
-                .focused = false,
             };
         }
 
@@ -47,7 +45,7 @@ pub fn GitDiff(comptime Widget: type) type {
 
         pub fn build(self: *GitDiff(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
-            self.box.border_style = if (self.focused) .double else .single;
+            self.box.border_style = if (root_focus.grandchild_id == self.getFocus().id) .double else .single;
             if (self.bufs.items.len > 0) {
                 try self.box.build(constraint, root_focus);
             }

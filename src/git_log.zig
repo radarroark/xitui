@@ -15,7 +15,6 @@ pub fn GitCommitList(comptime Widget: type) type {
         scroll: wgt.Scroll(Widget),
         repo: ?*c.git_repository,
         commits: std.ArrayList(?*c.git_commit),
-        focused: bool,
 
         pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository) !GitCommitList(Widget) {
             // init walker
@@ -59,7 +58,6 @@ pub fn GitCommitList(comptime Widget: type) type {
                 .scroll = scroll,
                 .repo = repo,
                 .commits = commits,
-                .focused = false,
             };
         }
 
@@ -76,7 +74,7 @@ pub fn GitCommitList(comptime Widget: type) type {
             const children = &self.scroll.child.box.children;
             for (children.keys(), children.values()) |id, *commit| {
                 commit.widget.text_box.border_style = if (self.getFocus().child_id == id)
-                    (if (self.focused) .double else .single)
+                    (if (root_focus.grandchild_id == id) .double else .single)
                 else
                     .hidden;
             }
@@ -165,7 +163,6 @@ pub fn GitLog(comptime Widget: type) type {
     return struct {
         box: wgt.Box(Widget),
         repo: ?*c.git_repository,
-        focused: bool,
 
         pub fn init(allocator: std.mem.Allocator, repo: ?*c.git_repository) !GitLog(Widget) {
             var box = try wgt.Box(Widget).init(allocator, null, .horiz);
@@ -189,7 +186,6 @@ pub fn GitLog(comptime Widget: type) type {
             var git_log = GitLog(Widget){
                 .box = box,
                 .repo = repo,
-                .focused = false,
             };
             git_log.getFocus().child_id = box.children.keys()[0];
             try git_log.updateDiff();
@@ -203,17 +199,6 @@ pub fn GitLog(comptime Widget: type) type {
 
         pub fn build(self: *GitLog(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
-            for (self.box.children.values()) |*child| {
-                switch (child.widget) {
-                    .git_commit_list => {
-                        child.widget.git_commit_list.focused = (self.getFocus().child_id == child.widget.getFocus().id) and self.focused;
-                    },
-                    .git_diff => {
-                        child.widget.git_diff.focused = (self.getFocus().child_id == child.widget.getFocus().id) and self.focused;
-                    },
-                    else => {},
-                }
-            }
             try self.box.build(constraint, root_focus);
         }
 

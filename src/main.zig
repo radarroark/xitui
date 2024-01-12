@@ -175,6 +175,15 @@ pub fn main() !void {
     var root = Widget{ .git_ui = try g_ui.GitUI(Widget).init(allocator, repo) };
     defer root.deinit();
 
+    // set initial focus for root widget
+    try root.build(.{
+        .min_size = .{ .width = null, .height = null },
+        .max_size = .{ .width = 10, .height = 10 },
+    }, root.getFocus());
+    if (root.getFocus().child_id) |child_id| {
+        try root.getFocus().setFocus(child_id);
+    }
+
     // init term
     term.terminal = try term.Terminal.init();
     defer term.terminal.deinit();

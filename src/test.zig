@@ -376,13 +376,14 @@ test "end to end" {
     // (the lazy way of doing it is just to get the largest id)
     try std.testing.expect(root.getFocus().children.count() > 0);
     var leaf_id = root.getFocus().id;
-    var key_iter = root.getFocus().children.keyIterator();
-    while (key_iter.next()) |child_id| {
-        if (child_id.* > leaf_id) {
-            leaf_id = child_id.*;
+    var iter = root.getFocus().children.iterator();
+    while (iter.next()) |child| {
+        if (child.key_ptr.* > leaf_id and child.value_ptr.focusable) {
+            leaf_id = child.key_ptr.*;
         }
     }
 
     // focus on widget
     try root.getFocus().setFocus(leaf_id);
+    try expectEqual(leaf_id, root.getFocus().grandchild_id);
 }

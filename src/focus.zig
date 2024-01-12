@@ -6,6 +6,7 @@ var next_id: usize = 0;
 pub const Focus = struct {
     id: usize,
     child_id: ?usize,
+    grandchild_id: ?usize,
     focusable: bool,
     children: std.AutoHashMap(usize, Child),
 
@@ -22,6 +23,7 @@ pub const Focus = struct {
         return .{
             .id = id,
             .child_id = null,
+            .grandchild_id = null,
             .focusable = false,
             .children = std.AutoHashMap(usize, Child).init(allocator),
         };
@@ -56,6 +58,18 @@ pub const Focus = struct {
 
     pub fn setFocus(self: *Focus, grandchild_id: usize) !void {
         var id = grandchild_id;
+        // find the nearest child to grandchild_id that is focusable
+        while (self.children.get(id)) |child| {
+            if (child.focusable) {
+                break;
+            } else if (child.focus.child_id) |next_child_id| {
+                id = next_child_id;
+            } else {
+                return;
+            }
+        }
+        // set the child_id of all parents so the id is focused
+        self.grandchild_id = id;
         while (self.children.get(id)) |child| {
             if (self.children.get(child.parent_id)) |*parent| {
                 parent.focus.child_id = id;

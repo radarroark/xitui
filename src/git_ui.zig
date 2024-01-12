@@ -14,7 +14,6 @@ const c = @cImport({
 pub fn GitUITabs(comptime Widget: type) type {
     return struct {
         box: wgt.Box(Widget),
-        focused: bool,
 
         const FocusKind = enum { log, status };
 
@@ -36,7 +35,6 @@ pub fn GitUITabs(comptime Widget: type) type {
 
             var git_ui_tabs = GitUITabs(Widget){
                 .box = box,
-                .focused = false,
             };
             git_ui_tabs.getFocus().child_id = box.children.keys()[0];
             return git_ui_tabs;
@@ -50,7 +48,7 @@ pub fn GitUITabs(comptime Widget: type) type {
             self.clearGrid();
             for (self.box.children.keys(), self.box.children.values()) |id, *tab| {
                 tab.widget.text_box.border_style = if (self.getFocus().child_id == id)
-                    (if (self.focused) .double else .single)
+                    (if (root_focus.grandchild_id == id) .double else .single)
                 else
                     .hidden;
             }
@@ -109,13 +107,11 @@ pub fn GitUIStack(comptime Widget: type) type {
     return struct {
         focus: Focus,
         children: std.AutoArrayHashMap(usize, Widget),
-        focused: bool,
 
         pub fn init(allocator: std.mem.Allocator) GitUIStack(Widget) {
             return .{
                 .focus = Focus.init(allocator),
                 .children = std.AutoArrayHashMap(usize, Widget).init(allocator),
-                .focused = false,
             };
         }
 
@@ -129,15 +125,6 @@ pub fn GitUIStack(comptime Widget: type) type {
 
         pub fn build(self: *GitUIStack(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
-            for (self.children.keys(), self.children.values()) |id, *child| {
-                switch (child.*) {
-                    inline else => |*case| {
-                        if (@hasField(@TypeOf(case.*), "focused")) {
-                            case.focused = self.focused and (self.getFocus().child_id == id);
-                        }
-                    },
-                }
-            }
             self.getFocus().clear();
             if (self.getSelected()) |selected_widget| {
                 try selected_widget.build(constraint, root_focus);
@@ -207,14 +194,12 @@ pub fn GitUI(comptime Widget: type) type {
                         {
                             var git_log = try g_log.GitLog(Widget).init(allocator, repo);
                             errdefer git_log.deinit();
-                            git_log.focused = true;
                             try stack.children.put(git_log.getFocus().id, .{ .git_log = git_log });
                         }
 
                         {
                             var git_status = try g_stat.GitStatus(Widget).init(allocator, repo);
                             errdefer git_status.deinit();
-                            git_status.focused = false;
                             try stack.children.put(git_status.getFocus().id, .{ .git_status = git_status });
                         }
 
@@ -236,10 +221,8 @@ pub fn GitUI(comptime Widget: type) type {
 
         pub fn build(self: *GitUI(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
-            var git_ui_tabs = &self.box.children.values()[0].widget.git_ui_tabs;
-            git_ui_tabs.focused = self.getFocus().child_id == git_ui_tabs.getFocus().id;
-            var git_ui_stack = &self.box.children.values()[1].widget.git_ui_stack;
-            git_ui_stack.focused = self.getFocus().child_id == git_ui_stack.getFocus().id;
+            const git_ui_tabs = &self.box.children.values()[@intFromEnum(FocusKind.tabs)].widget.git_ui_tabs;
+            const git_ui_stack = &self.box.children.values()[@intFromEnum(FocusKind.stack)].widget.git_ui_stack;
             if (git_ui_tabs.getSelectedIndex()) |index| {
                 git_ui_stack.getFocus().child_id = git_ui_stack.children.keys()[index];
             }

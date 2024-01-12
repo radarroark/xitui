@@ -105,7 +105,6 @@ pub fn GitStatusList(comptime Widget: type) type {
     return struct {
         scroll: wgt.Scroll(Widget),
         statuses: []Status,
-        focused: bool,
 
         pub fn init(allocator: std.mem.Allocator, statuses: []Status) !GitStatusList(Widget) {
             // init inner_box
@@ -128,7 +127,6 @@ pub fn GitStatusList(comptime Widget: type) type {
             return .{
                 .scroll = scroll,
                 .statuses = statuses,
-                .focused = false,
             };
         }
 
@@ -141,7 +139,7 @@ pub fn GitStatusList(comptime Widget: type) type {
             const children = &self.scroll.child.box.children;
             for (children.keys(), children.values()) |id, *item| {
                 item.widget.git_status_list_item.setBorder(if (self.getFocus().child_id == id)
-                    (if (self.focused) .double else .single)
+                    (if (root_focus.grandchild_id == id) .double else .single)
                 else
                     .hidden);
             }
@@ -231,7 +229,6 @@ pub fn GitStatusTabs(comptime Widget: type) type {
     return struct {
         box: wgt.Box(Widget),
         arena: std.heap.ArenaAllocator,
-        focused: bool,
 
         const tab_count = @typeInfo(IndexKind).Enum.fields.len;
 
@@ -269,7 +266,6 @@ pub fn GitStatusTabs(comptime Widget: type) type {
             var git_status_tabs = GitStatusTabs(Widget){
                 .box = box,
                 .arena = arena,
-                .focused = false,
             };
             git_status_tabs.getFocus().child_id = box.children.keys()[@intFromEnum(selected_maybe orelse .added)];
             return git_status_tabs;
@@ -284,7 +280,7 @@ pub fn GitStatusTabs(comptime Widget: type) type {
             self.clearGrid();
             for (self.box.children.keys(), self.box.children.values()) |id, *tab| {
                 tab.widget.text_box.border_style = if (self.getFocus().child_id == id)
-                    (if (self.focused) .double else .single)
+                    (if (root_focus.grandchild_id == id) .double else .single)
                 else
                     .hidden;
             }
@@ -345,7 +341,6 @@ pub fn GitStatusContent(comptime Widget: type) type {
         box: wgt.Box(Widget),
         filtered_statuses: std.ArrayList(Status),
         repo: ?*c.git_repository,
-        focused: bool,
 
         const FocusKind = enum { status_list, diff };
 
@@ -367,14 +362,12 @@ pub fn GitStatusContent(comptime Widget: type) type {
                     .status_list => {
                         var status_list = try GitStatusList(Widget).init(allocator, filtered_statuses.items);
                         errdefer status_list.deinit();
-                        status_list.focused = true;
                         try box.children.put(status_list.getFocus().id, .{ .widget = .{ .git_status_list = status_list }, .rect = null, .min_size = .{ .width = 20, .height = null } });
                     },
                     .diff => {
                         var diff = try g_diff.GitDiff(Widget).init(allocator, repo);
                         errdefer diff.deinit();
                         diff.getFocus().focusable = true;
-                        diff.focused = false;
                         try box.children.put(diff.getFocus().id, .{ .widget = .{ .git_diff = diff }, .rect = null, .min_size = .{ .width = 60, .height = null } });
                     },
                 }
@@ -384,7 +377,6 @@ pub fn GitStatusContent(comptime Widget: type) type {
                 .box = box,
                 .filtered_statuses = filtered_statuses,
                 .repo = repo,
-                .focused = false,
             };
             status_content.getFocus().child_id = box.children.keys()[0];
             try status_content.updateDiff();
@@ -398,17 +390,6 @@ pub fn GitStatusContent(comptime Widget: type) type {
 
         pub fn build(self: *GitStatusContent(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
-            for (self.box.children.values()) |*child| {
-                switch (child.widget) {
-                    .git_status_list => {
-                        child.widget.git_status_list.focused = (self.getFocus().child_id == child.widget.getFocus().id) and self.focused;
-                    },
-                    .git_diff => {
-                        child.widget.git_diff.focused = (self.getFocus().child_id == child.widget.getFocus().id) and self.focused;
-                    },
-                    else => {},
-                }
-            }
             if (self.filtered_statuses.items.len > 0) {
                 try self.box.build(constraint, root_focus);
             }
@@ -573,7 +554,6 @@ pub fn GitStatus(comptime Widget: type) type {
         box: wgt.Box(Widget),
         status_list: *c.git_status_list,
         statuses: std.ArrayList(Status),
-        focused: bool,
 
         const FocusKind = enum { status_tabs, status_content };
 
@@ -653,7 +633,6 @@ pub fn GitStatus(comptime Widget: type) type {
                 .box = box,
                 .statuses = statuses,
                 .status_list = status_list.?,
-                .focused = false,
             };
             git_status.getFocus().child_id = box.children.keys()[0];
             return git_status;
@@ -667,10 +646,8 @@ pub fn GitStatus(comptime Widget: type) type {
 
         pub fn build(self: *GitStatus(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
             self.clearGrid();
-            var status_tabs = &self.box.children.values()[0].widget.git_status_tabs;
-            status_tabs.focused = (self.getFocus().child_id == status_tabs.getFocus().id) and self.focused;
-            var stack = &self.box.children.values()[1].widget.git_ui_stack;
-            stack.focused = (self.getFocus().child_id == stack.getFocus().id) and self.focused;
+            const status_tabs = &self.box.children.values()[@intFromEnum(FocusKind.status_tabs)].widget.git_status_tabs;
+            const stack = &self.box.children.values()[@intFromEnum(FocusKind.status_content)].widget.git_ui_stack;
             if (status_tabs.getSelectedIndex()) |index| {
                 stack.getFocus().child_id = stack.children.keys()[index];
             }
