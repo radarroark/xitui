@@ -129,33 +129,31 @@ pub fn Box(comptime Widget: type) type {
                 if (max_height <= border_size * 2) return;
             }
 
-            var sorted_children = std.AutoArrayHashMap(usize, Child).init(self.allocator);
+            var sorted_children = std.AutoArrayHashMap(usize, void).init(self.allocator);
             defer sorted_children.deinit();
+            var should_sort = false;
             for (self.children.values(), 0..) |child, i| {
-                try sorted_children.put(i, child);
-            }
-            const SortCtx = struct {
-                values: []Child,
-                selected_index: usize,
-
-                pub fn lessThan(ctx: @This(), a_index: usize, b_index: usize) bool {
-                    const a = &ctx.values[a_index];
-                    const b = &ctx.values[b_index];
-                    if (a.min_size) |_| {
-                        if (b.min_size) |_| {
-                            const ia: isize = @intCast(a_index);
-                            const ib: isize = @intCast(b_index);
-                            const a_priority = if (ia <= ctx.selected_index) ia else -ia;
-                            const b_priority = if (ib <= ctx.selected_index) ib else -ib;
-                            return a_priority > b_priority;
-                        }
-                    }
-                    return false;
+                try sorted_children.put(i, {});
+                if (child.min_size != null) {
+                    should_sort = true;
                 }
-            };
-            if (self.getFocus().child_id) |child_id| {
-                if (self.children.getIndex(child_id)) |index| {
-                    sorted_children.sort(SortCtx{ .values = sorted_children.values(), .selected_index = index });
+            }
+            if (should_sort) {
+                const SortCtx = struct {
+                    selected_index: usize,
+
+                    pub fn lessThan(ctx: @This(), a_index: usize, b_index: usize) bool {
+                        const ia: isize = @intCast(a_index);
+                        const ib: isize = @intCast(b_index);
+                        const a_priority = if (ia <= ctx.selected_index) ia else -ia;
+                        const b_priority = if (ib <= ctx.selected_index) ib else -ib;
+                        return a_priority > b_priority;
+                    }
+                };
+                if (self.getFocus().child_id) |child_id| {
+                    if (self.children.getIndex(child_id)) |index| {
+                        sorted_children.sort(SortCtx{ .selected_index = index });
+                    }
                 }
             }
 
