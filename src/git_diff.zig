@@ -25,7 +25,7 @@ pub fn GitDiff(comptime Widget: type) type {
 
             var outer_box = try wgt.Box(Widget).init(allocator, .single, .vert);
             errdefer outer_box.deinit();
-            try outer_box.children.put(outer_box.getFocus().id, .{ .widget = .{ .scroll = scroll }, .rect = null, .min_size = null });
+            try outer_box.children.put(scroll.getFocus().id, .{ .widget = .{ .scroll = scroll }, .rect = null, .min_size = null });
 
             return .{
                 .box = outer_box,
