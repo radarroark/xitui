@@ -263,6 +263,8 @@ pub fn Box(comptime Widget: type) type {
                             try grid.drawGrid(child_grid, border_size, line + border_size);
                             try self.getFocus().addChild(child.widget.getFocus(), child_grid.size, border_size, line + border_size);
                             line += child_grid.size.height;
+                        } else {
+                            try self.getFocus().addChild(child.widget.getFocus(), .{ .width = 0, .height = 0 }, 0, 0);
                         }
                     }
                 },
@@ -274,6 +276,8 @@ pub fn Box(comptime Widget: type) type {
                             try grid.drawGrid(child_grid, col + border_size, border_size);
                             try self.getFocus().addChild(child.widget.getFocus(), child_grid.size, col + border_size, border_size);
                             col += child_grid.size.width;
+                        } else {
+                            try self.getFocus().addChild(child.widget.getFocus(), .{ .width = 0, .height = 0 }, 0, 0);
                         }
                     }
                 },
