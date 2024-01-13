@@ -166,19 +166,22 @@ pub fn Box(comptime Widget: type) type {
                 var child = &self.children.values()[child_index];
                 child.widget.clearGrid();
 
-                if (remaining_width_maybe) |remaining_width| {
-                    if (remaining_width <= 0) continue;
-                    if (child.min_size) |min_size| {
-                        if (min_size.width) |min_width| {
-                            if (remaining_width < min_width) continue;
+                // skip any children after the first if their min size is too large
+                if (sorted_child_index > 0) {
+                    if (remaining_width_maybe) |remaining_width| {
+                        if (remaining_width <= 0) continue;
+                        if (child.min_size) |min_size| {
+                            if (min_size.width) |min_width| {
+                                if (remaining_width < min_width) continue;
+                            }
                         }
                     }
-                }
-                if (remaining_height_maybe) |remaining_height| {
-                    if (remaining_height <= 0) continue;
-                    if (child.min_size) |min_size| {
-                        if (min_size.height) |min_height| {
-                            if (remaining_height < min_height) continue;
+                    if (remaining_height_maybe) |remaining_height| {
+                        if (remaining_height <= 0) continue;
+                        if (child.min_size) |min_size| {
+                            if (min_size.height) |min_height| {
+                                if (remaining_height < min_height) continue;
+                            }
                         }
                     }
                 }
