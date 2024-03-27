@@ -1,11 +1,5 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const system = switch (builtin.os.tag) {
-    .linux => std.os.linux,
-    .wasi => std.os.wasi,
-    .uefi => std.os.uefi,
-    else => std.os.system,
-};
 const Size = @import("./layout.zig").Size;
 
 pub var terminal: Terminal = undefined;
@@ -16,8 +10,8 @@ fn handleSigWinch(_: c_int) callconv(.C) void {
 
 pub const Terminal = struct {
     tty: std.fs.File,
-    cooked_termios: std.os.termios = undefined,
-    raw: std.os.termios = undefined,
+    cooked_termios: std.posix.termios = undefined,
+    raw: std.posix.termios = undefined,
     size: Size = undefined,
 
     pub fn init() !Terminal {
@@ -32,9 +26,9 @@ pub const Terminal = struct {
 
         try self.updateSize();
 
-        try std.os.sigaction(std.os.SIG.WINCH, &std.os.Sigaction{
+        try std.posix.sigaction(std.posix.SIG.WINCH, &std.posix.Sigaction{
             .handler = .{ .handler = handleSigWinch },
-            .mask = std.os.empty_sigset,
+            .mask = std.posix.empty_sigset,
             .flags = 0,
         }, null);
 
@@ -47,10 +41,10 @@ pub const Terminal = struct {
     }
 
     pub fn updateSize(self: *Terminal) !void {
-        var win_size = std.mem.zeroes(system.winsize);
-        const err = system.ioctl(terminal.tty.handle, system.T.IOCGWINSZ, @intFromPtr(&win_size));
-        if (std.os.errno(err) != .SUCCESS) {
-            return std.os.unexpectedErrno(@enumFromInt(err));
+        var win_size = std.mem.zeroes(std.posix.winsize);
+        const err = std.os.linux.ioctl(terminal.tty.handle, std.posix.T.IOCGWINSZ, @intFromPtr(&win_size));
+        if (std.posix.errno(err) != .SUCCESS) {
+            return std.posix.unexpectedErrno(@enumFromInt(err));
         }
         self.size = Size{
             .height = win_size.ws_row,
@@ -60,23 +54,17 @@ pub const Terminal = struct {
 
     fn uncook(self: *Terminal) !void {
         const writer = self.tty.writer();
-        self.cooked_termios = try std.os.tcgetattr(self.tty.handle);
+        self.cooked_termios = try std.posix.tcgetattr(self.tty.handle);
         errdefer self.cook() catch {};
 
         self.raw = self.cooked_termios;
-        self.raw.lflag &= ~@as(
-            system.tcflag_t,
-            system.ECHO | system.ICANON | system.ISIG | system.IEXTEN,
-        );
-        self.raw.iflag &= ~@as(
-            system.tcflag_t,
-            system.IXON | system.ICRNL | system.BRKINT | system.INPCK | system.ISTRIP,
-        );
-        self.raw.oflag &= ~@as(system.tcflag_t, system.OPOST);
-        self.raw.cflag |= system.CS8;
-        self.raw.cc[system.V.TIME] = 0;
-        self.raw.cc[system.V.MIN] = 1;
-        try std.os.tcsetattr(self.tty.handle, .FLUSH, self.raw);
+        self.raw.lflag = .{ .ECHO = true, .ISIG = true, .IEXTEN = true };
+        self.raw.iflag = .{ .ICRNL = true, .IUTF8 = true };
+        self.raw.oflag = .{ .OPOST = true };
+        self.raw.cflag.CSIZE = .CS8;
+        self.raw.cc[@intFromEnum(std.posix.V.TIME)] = 0;
+        self.raw.cc[@intFromEnum(std.posix.V.MIN)] = 1;
+        try std.posix.tcsetattr(self.tty.handle, .FLUSH, self.raw);
 
         try hideCursor(writer);
         try enterAlt(writer);
@@ -89,7 +77,7 @@ pub const Terminal = struct {
         try leaveAlt(writer);
         try showCursor(writer);
         try attributeReset(writer);
-        try std.os.tcsetattr(self.tty.handle, .FLUSH, self.cooked_termios);
+        try std.posix.tcsetattr(self.tty.handle, .FLUSH, self.cooked_termios);
     }
 
     pub fn write(self: *Terminal, txt: []const u8, x: usize, y: usize) !void {
@@ -167,7 +155,7 @@ pub fn clearRect(writer: anytype, x: usize, y: usize, size: Size) !void {
 }
 
 pub fn setNonBlocking() !void {
-    terminal.raw.cc[system.V.TIME] = 1;
-    terminal.raw.cc[system.V.MIN] = 0;
-    try std.os.tcsetattr(terminal.tty.handle, .NOW, terminal.raw);
+    terminal.raw.cc[@intFromEnum(std.posix.V.TIME)] = 1;
+    terminal.raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
+    try std.posix.tcsetattr(terminal.tty.handle, .NOW, terminal.raw);
 }
