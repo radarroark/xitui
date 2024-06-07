@@ -16,16 +16,16 @@ pub fn build(b: *std.Build) !void {
     const git2 = try libgit2.create(b, target, optimize);
     ssh2.link(git2.step);
     tls.link(git2.step);
-    z.link(git2.step, .{});
+    z.link(git2.step);
 
     const exe = b.addExecutable(.{
         .name = "radargit",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "src/main.zig" } },
         .target = target,
         .optimize = optimize,
     });
     exe.linkLibC();
-    exe.addIncludePath(.{ .path = "src/deps/libgit2/include" });
+    exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "src/deps/libgit2/include" } });
     exe.linkLibrary(git2.step);
     b.installArtifact(exe);
 
@@ -38,12 +38,12 @@ pub fn build(b: *std.Build) !void {
     run_step.dependOn(&run_cmd.step);
 
     const unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/test.zig" },
+        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "src/test.zig" } },
         .target = target,
         .optimize = optimize,
     });
     unit_tests.linkLibC();
-    unit_tests.addIncludePath(.{ .path = "src/deps/libgit2/include" });
+    unit_tests.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "src/deps/libgit2/include" } });
     unit_tests.linkLibrary(git2.step);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
