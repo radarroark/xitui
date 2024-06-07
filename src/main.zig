@@ -117,7 +117,7 @@ fn tick(allocator: std.mem.Allocator, root: *Widget, last_grid_maybe: *?Grid, la
             .min_size = .{ .width = null, .height = null },
             .max_size = .{ .width = root_size.width, .height = root_size.height },
         }, root.getFocus());
-        try term.clearRect(term.terminal.tty.writer(), 0, 0, root_size);
+        try term.clearRect(term.terminal.core.tty.writer(), 0, 0, root_size);
         last_size.* = root_size;
 
         if (root.getGrid()) |grid| {
@@ -134,7 +134,7 @@ fn tick(allocator: std.mem.Allocator, root: *Widget, last_grid_maybe: *?Grid, la
 
     const buffer_size = 32;
     var buffer: [buffer_size]u8 = undefined;
-    const size = try term.terminal.tty.read(&buffer);
+    const size = try term.terminal.core.tty.read(&buffer);
     var esc = try std.ArrayList(u8).initCapacity(allocator, buffer_size);
     defer esc.deinit();
 
@@ -185,9 +185,8 @@ pub fn main() !void {
     }
 
     // init term
-    term.terminal = try term.Terminal.init();
+    term.terminal = try term.Terminal.init(allocator);
     defer term.terminal.deinit();
-    try term.setNonBlocking();
 
     var last_grid_maybe: ?Grid = null;
     defer if (last_grid_maybe) |*last_grid| last_grid.deinit();
