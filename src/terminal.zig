@@ -469,7 +469,21 @@ pub const Terminal = struct {
 };
 
 pub fn moveCursor(writer: anytype, x: usize, y: usize) !void {
-    _ = try writer.print("\x1B[{};{}H", .{ y + 1, x + 1 });
+    switch (builtin.os.tag) {
+        .windows => {
+            const out_handle = std.io.getStdOut().handle;
+            const pos = std.os.windows.COORD{
+                .X = @intCast(x),
+                .Y = @intCast(y),
+            };
+            if (0 == std.os.windows.kernel32.SetConsoleCursorPosition(out_handle, pos)) {
+                return error.FailedToSetConsoleCursorPosition;
+            }
+        },
+        else => {
+            _ = try writer.print("\x1B[{};{}H", .{ y + 1, x + 1 });
+        },
+    }
 }
 
 pub fn enterAlt(writer: anytype) !void {
