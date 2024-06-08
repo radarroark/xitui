@@ -129,32 +129,41 @@ pub const Terminal = struct {
                                     continue;
                                 }
                                 const bytes_read_old = bytes_read;
-                                switch (event.KeyEvent.wVirtualKeyCode) {
-                                    // LEFT ARROW
-                                    0x25 => {
-                                        const esc_code = "\x1B[D";
-                                        bytes_read += esc_code.len;
-                                        @memcpy(buffer[bytes_read_old..bytes_read], esc_code);
-                                    },
-                                    // UP ARROW
-                                    0x26 => {
-                                        const esc_code = "\x1B[A";
-                                        bytes_read += esc_code.len;
-                                        @memcpy(buffer[bytes_read_old..bytes_read], esc_code);
-                                    },
-                                    // RIGHT ARROW
-                                    0x27 => {
-                                        const esc_code = "\x1B[C";
-                                        bytes_read += esc_code.len;
-                                        @memcpy(buffer[bytes_read_old..bytes_read], esc_code);
-                                    },
-                                    // DOWN ARROW
-                                    0x28 => {
-                                        const esc_code = "\x1B[B";
-                                        bytes_read += esc_code.len;
-                                        @memcpy(buffer[bytes_read_old..bytes_read], esc_code);
-                                    },
-                                    else => continue,
+                                // if unicode char is not zero, just read it into the buffer
+                                if (event.KeyEvent.uChar.UnicodeChar > 0) {
+                                    const char_bytes = std.mem.toBytes(event.KeyEvent.uChar.UnicodeChar);
+                                    bytes_read += char_bytes.len;
+                                    @memcpy(buffer[bytes_read_old..bytes_read], &char_bytes);
+                                }
+                                // otherwise convert the virtual key code to the right escape code
+                                else {
+                                    switch (event.KeyEvent.wVirtualKeyCode) {
+                                        // LEFT ARROW
+                                        0x25 => {
+                                            const esc_code = "\x1B[D";
+                                            bytes_read += esc_code.len;
+                                            @memcpy(buffer[bytes_read_old..bytes_read], esc_code);
+                                        },
+                                        // UP ARROW
+                                        0x26 => {
+                                            const esc_code = "\x1B[A";
+                                            bytes_read += esc_code.len;
+                                            @memcpy(buffer[bytes_read_old..bytes_read], esc_code);
+                                        },
+                                        // RIGHT ARROW
+                                        0x27 => {
+                                            const esc_code = "\x1B[C";
+                                            bytes_read += esc_code.len;
+                                            @memcpy(buffer[bytes_read_old..bytes_read], esc_code);
+                                        },
+                                        // DOWN ARROW
+                                        0x28 => {
+                                            const esc_code = "\x1B[B";
+                                            bytes_read += esc_code.len;
+                                            @memcpy(buffer[bytes_read_old..bytes_read], esc_code);
+                                        },
+                                        else => continue,
+                                    }
                                 }
                             },
                             // MOUSE_EVENT
