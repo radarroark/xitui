@@ -20,12 +20,12 @@ pub fn build(b: *std.Build) !void {
 
     const exe = b.addExecutable(.{
         .name = "radargit",
-        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "src/main.zig" } },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
     exe.linkLibC();
-    exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "src/deps/libgit2/include" } });
+    exe.addIncludePath(b.path("src/deps/libgit2/include"));
     exe.linkLibrary(git2.step);
     b.installArtifact(exe);
 
@@ -38,12 +38,12 @@ pub fn build(b: *std.Build) !void {
     run_step.dependOn(&run_cmd.step);
 
     const unit_tests = b.addTest(.{
-        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "src/test.zig" } },
+        .root_source_file = b.path("src/test.zig"),
         .target = target,
         .optimize = optimize,
     });
     unit_tests.linkLibC();
-    unit_tests.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "src/deps/libgit2/include" } });
+    unit_tests.addIncludePath(b.path("src/deps/libgit2/include"));
     unit_tests.linkLibrary(git2.step);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
