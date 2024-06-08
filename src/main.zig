@@ -132,26 +132,16 @@ fn tick(allocator: std.mem.Allocator, root: *Widget, last_grid_maybe: *?Grid, la
         }
     }
 
-    const buffer_size = 32;
-    var buffer: [buffer_size]u8 = undefined;
-    const size = try term.terminal.core.tty.read(&buffer);
-    var esc = try std.ArrayList(u8).initCapacity(allocator, buffer_size);
-    defer esc.deinit();
-
-    if (size > 0) {
-        const text = std.unicode.Utf8View.init(buffer[0..size]) catch return;
-        var iter = text.iterator();
-        while (iter.nextCodepoint()) |codepoint| {
-            const next_bytes = iter.peek(1);
-            if (try inp.Key.init(codepoint, if (next_bytes.len == 1) next_bytes[0] else null, &esc)) |key| {
-                try root.input(key, root.getFocus());
-            }
+    while (try term.terminal.readKey()) |key| {
+        if (key == .codepoint and key.codepoint == 'q') {
+            return error.TerminalQuit;
         }
-        try root.build(.{
-            .min_size = .{ .width = null, .height = null },
-            .max_size = .{ .width = root_size.width, .height = root_size.height },
-        }, root.getFocus());
+        try root.input(key, root.getFocus());
     }
+    try root.build(.{
+        .min_size = .{ .width = null, .height = null },
+        .max_size = .{ .width = root_size.width, .height = root_size.height },
+    }, root.getFocus());
 }
 
 pub fn main() !void {
