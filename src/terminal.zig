@@ -105,6 +105,35 @@ pub const Core = switch (builtin.os.tag) {
             }
         };
 
+        fn uncook(self: *Core) !void {
+            const out_handle = std.io.getStdOut().handle;
+            if (0 == std.os.windows.kernel32.GetConsoleMode(out_handle, &self.tty.old_out_mode)) {
+                return error.FailedToGetConsoleMode;
+            }
+            const ENABLE_WRAP_AT_EOL_OUTPUT: std.os.windows.DWORD = 0x0002;
+            const new_out_mode = self.tty.old_out_mode & ~ENABLE_WRAP_AT_EOL_OUTPUT;
+            if (0 == std.os.windows.kernel32.SetConsoleMode(out_handle, new_out_mode)) {
+                return error.FailedToSetConsoleMode;
+            }
+            errdefer self.cook() catch {};
+
+            const writer = self.tty.writer();
+            try hideCursor(writer);
+            try enterAlt(writer);
+            try clearStyle(writer);
+        }
+
+        fn cook(self: *Core) !void {
+            const writer = self.tty.writer();
+            try clearStyle(writer);
+            try leaveAlt(writer);
+            try showCursor(writer);
+            try attributeReset(writer);
+
+            const out_handle = std.io.getStdOut().handle;
+            _ = std.os.windows.kernel32.SetConsoleMode(out_handle, self.tty.old_out_mode);
+        }
+
         fn readKey(_: *Core) !?inp.Key {
             while (true) {
                 const in_handle = std.io.getStdIn().handle;
@@ -310,25 +339,16 @@ pub const Terminal = struct {
     pub fn init(allocator: std.mem.Allocator) !Terminal {
         switch (builtin.os.tag) {
             .windows => {
-                const out_handle = std.io.getStdOut().handle;
-                var old_out_mode: std.os.windows.DWORD = undefined;
-                if (0 == std.os.windows.kernel32.GetConsoleMode(out_handle, &old_out_mode)) {
-                    return error.FailedToGetConsoleMode;
-                }
-                const ENABLE_WRAP_AT_EOL_OUTPUT: std.os.windows.DWORD = 0x0002;
-                const new_out_mode = old_out_mode & ~ENABLE_WRAP_AT_EOL_OUTPUT;
-                if (0 == std.os.windows.kernel32.SetConsoleMode(out_handle, new_out_mode)) {
-                    return error.FailedToSetConsoleMode;
-                }
                 var self = Terminal{
                     .core = .{
                         .tty = .{
                             .allocator = allocator,
-                            .old_out_mode = old_out_mode,
+                            .old_out_mode = undefined,
                         },
                     },
                     .size = undefined,
                 };
+                try self.core.uncook();
                 try self.updateSize();
                 try self.core.tty.writer().writeAll("\x1B[?1049h"); // clear screen
                 return self;
@@ -373,8 +393,7 @@ pub const Terminal = struct {
     pub fn deinit(self: *Terminal) void {
         switch (builtin.os.tag) {
             .windows => {
-                const out_handle = std.io.getStdOut().handle;
-                _ = std.os.windows.kernel32.SetConsoleMode(out_handle, self.core.tty.old_out_mode);
+                self.core.cook() catch {};
             },
             else => {
                 self.core.cook() catch {};
