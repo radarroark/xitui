@@ -166,14 +166,19 @@ pub const Core = switch (builtin.os.tag) {
                             const size = try std.unicode.utf16LeToUtf8(&utf8_buffer, &[_]u16{event.KeyEvent.uChar.UnicodeChar});
                             return .{ .codepoint = try std.unicode.utf8Decode(utf8_buffer[0..size]) };
                         }
-                        // otherwise it's non-printable key
+                        // otherwise it's a non-printable key. key codes are listed here:
+                        // https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
                         else {
                             return switch (event.KeyEvent.wVirtualKeyCode) {
+                                0x21 => .page_up,
+                                0x22 => .page_down,
+                                0x23 => .end,
+                                0x24 => .home,
                                 0x25 => .arrow_left,
                                 0x26 => .arrow_up,
                                 0x27 => .arrow_right,
                                 0x28 => .arrow_down,
-                                else => null,
+                                else => continue,
                             };
                         }
                     },
