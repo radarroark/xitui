@@ -79,13 +79,9 @@ pub const Grid = struct {
     }
 };
 
-pub fn expectEqual(expected: anytype, actual: anytype) !void {
-    try std.testing.expectEqual(@as(@TypeOf(actual), expected), actual);
-}
-
 test {
     const allocator = std.testing.allocator;
     var grid = try Grid.init(allocator, .{ .width = 10, .height = 10 });
     defer grid.deinit();
-    try expectEqual(null, grid.cells.items[try grid.cells.at(.{ 0, 0 })].rune);
+    try std.testing.expectEqual(null, grid.cells.items[try grid.cells.at(.{ 0, 0 })].rune);
 }
