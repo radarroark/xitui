@@ -77,6 +77,32 @@ pub const Grid = struct {
             }
         }
     }
+
+    pub fn toString(self: Grid, allocator: std.mem.Allocator) ![]const u8 {
+        if (self.size.width == 0 or self.size.height == 0) {
+            return error.EmptyGrid;
+        }
+
+        var buffer = std.ArrayList(u8).init(allocator);
+        errdefer buffer.deinit();
+
+        for (0..self.size.height) |y| {
+            for (0..self.size.width) |x| {
+                if (self.cells.items[try self.cells.at(.{ y, x })].rune) |rune| {
+                    for (rune) |byte| {
+                        try buffer.append(byte);
+                    }
+                } else {
+                    try buffer.append(' ');
+                }
+            }
+            if (y + 1 < self.size.height) {
+                try buffer.append('\n');
+            }
+        }
+
+        return try buffer.toOwnedSlice();
+    }
 };
 
 test {
