@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const inp = @import("./input.zig");
 const Size = @import("./layout.zig").Size;
+const grd = @import("./grid.zig");
 
 pub var terminal: Terminal = undefined;
 
@@ -12,6 +13,7 @@ fn handleSigWinch(_: c_int) callconv(.C) void {
 pub const Core = switch (builtin.os.tag) {
     .windows => struct {
         tty: Tty,
+        allocator: std.mem.Allocator,
 
         pub const KEY_EVENT_RECORD = extern struct {
             bKeyDown: std.os.windows.BOOL,
@@ -346,6 +348,7 @@ pub const Terminal = struct {
             .windows => {
                 var self = Terminal{
                     .core = .{
+                        .allocator = allocator,
                         .tty = .{
                             .allocator = allocator,
                             .old_out_mode = undefined,
@@ -470,6 +473,77 @@ pub const Terminal = struct {
 
     pub fn readKey(self: *Terminal) !?inp.Key {
         return try self.core.readKey();
+    }
+
+    pub fn render(self: *Terminal, root_widget: anytype, last_grid: *grd.Grid, last_size: *Size) !void {
+        const root_size = Size{ .width = self.size.width, .height = self.size.height };
+        if (root_size.width == 0 or root_size.height == 0) {
+            return;
+        }
+
+        // determine if the grid must be refreshed
+        var force_refresh = false;
+        if (last_size.*.width != root_size.width or last_size.*.height != root_size.height) {
+            force_refresh = true;
+        } else if (root_widget.getGrid()) |grid| {
+            if (last_grid.size.width != grid.size.width or last_grid.size.height != grid.size.height) {
+                force_refresh = true;
+            }
+        }
+
+        if (force_refresh) {
+            // rebuild the root widget
+            try root_widget.build(.{
+                .min_size = .{ .width = null, .height = null },
+                .max_size = .{ .width = root_size.width, .height = root_size.height },
+            }, root_widget.getFocus());
+            try clearRect(self.core.tty.writer(), 0, 0, root_size);
+            last_size.* = root_size;
+
+            // render the grid
+            if (root_widget.getGrid()) |grid| {
+                last_grid.deinit();
+                last_grid.* = try grd.Grid.initFromGrid(self.core.allocator, grid, grid.size, 0, 0);
+                for (0..grid.size.height) |y| {
+                    for (0..grid.size.width) |x| {
+                        if (grid.cells.items[try grid.cells.at(.{ y, x })].rune) |rune| {
+                            try self.write(rune, x, y);
+                        }
+                    }
+                }
+            }
+        } else {
+            if (root_widget.getGrid()) |grid| {
+                // clear cells that are in last grid but not current grid
+                for (0..last_grid.size.height) |y| {
+                    for (0..last_grid.size.width) |x| {
+                        if (grid.cells.items[try grid.cells.at(.{ y, x })].rune == null) {
+                            try self.write(" ", x, y);
+                        }
+                    }
+                }
+                // render the grid
+                for (0..grid.size.height) |y| {
+                    for (0..grid.size.width) |x| {
+                        if (grid.cells.items[try grid.cells.at(.{ y, x })].rune) |rune| {
+                            try self.write(rune, x, y);
+                        }
+                    }
+                }
+            }
+        }
+
+        // process one key input and rebuild
+        while (try self.readKey()) |key| {
+            if (key == .codepoint and key.codepoint == 'q') {
+                return error.TerminalQuit;
+            }
+            try root_widget.input(key, root_widget.getFocus());
+        }
+        try root_widget.build(.{
+            .min_size = .{ .width = null, .height = null },
+            .max_size = .{ .width = root_size.width, .height = root_size.height },
+        }, root_widget.getFocus());
     }
 };
 
