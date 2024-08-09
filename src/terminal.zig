@@ -522,6 +522,7 @@ pub const Terminal = struct {
                         }
                     }
                 }
+
                 // render the grid
                 for (0..grid.size.height) |y| {
                     for (0..grid.size.width) |x| {
@@ -532,18 +533,6 @@ pub const Terminal = struct {
                 }
             }
         }
-
-        // process one key input and rebuild
-        while (try self.readKey()) |key| {
-            if (key == .codepoint and key.codepoint == 'q') {
-                return error.TerminalQuit;
-            }
-            try root_widget.input(key, root_widget.getFocus());
-        }
-        try root_widget.build(.{
-            .min_size = .{ .width = null, .height = null },
-            .max_size = .{ .width = root_size.width, .height = root_size.height },
-        }, root_widget.getFocus());
     }
 };
 
