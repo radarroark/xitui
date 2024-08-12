@@ -421,17 +421,19 @@ pub const Terminal = struct {
     pub fn write(self: *Terminal, txt: []const u8, x: usize, y: usize) !void {
         if (y >= 0 and y < terminal_size.height) {
             const writer = self.core.tty.writer();
-            try moveCursor(writer, x, y);
-            try writer.writeAll(txt);
+            if (try moveCursor(writer, x, y)) {
+                try writer.writeAll(txt);
+            }
         }
     }
 
     pub fn writeHoriz(self: Terminal, char: []const u8, x: usize, y: usize, width: usize) !void {
         if (y >= 0 and y < terminal_size.height) {
             const writer = self.core.tty.writer();
-            try moveCursor(writer, x, y);
-            for (0..width) |_| {
-                try writer.writeAll(char);
+            if (try moveCursor(writer, x, y)) {
+                for (0..width) |_| {
+                    try writer.writeAll(char);
+                }
             }
         }
     }
@@ -440,8 +442,9 @@ pub const Terminal = struct {
         if (y >= 0 and y < terminal_size.height) {
             const writer = self.core.tty.writer();
             for (0..height) |i| {
-                try moveCursor(writer, x, y + i);
-                try writer.writeAll(char);
+                if (try moveCursor(writer, x, y + i)) {
+                    try writer.writeAll(char);
+                }
             }
         }
     }
@@ -544,7 +547,7 @@ pub fn getTerminalSize() !Size {
     }
 }
 
-pub fn moveCursor(writer: anytype, x: usize, y: usize) !void {
+pub fn moveCursor(writer: anytype, x: usize, y: usize) !bool {
     switch (builtin.os.tag) {
         .windows => {
             const out_handle = std.io.getStdOut().handle;
@@ -552,12 +555,18 @@ pub fn moveCursor(writer: anytype, x: usize, y: usize) !void {
                 .X = @intCast(x),
                 .Y = @intCast(y),
             };
+            terminal_size = try getTerminalSize();
+            if (pos.X >= terminal_size.width or pos.Y >= terminal_size.height) {
+                return false;
+            }
             if (0 == std.os.windows.kernel32.SetConsoleCursorPosition(out_handle, pos)) {
                 return error.FailedToSetConsoleCursorPosition;
             }
+            return true;
         },
         else => {
             _ = try writer.print("\x1B[{};{}H", .{ y + 1, x + 1 });
+            return true;
         },
     }
 }
@@ -596,9 +605,10 @@ pub fn clearStyle(writer: anytype) !void {
 
 pub fn clearRect(writer: anytype, x: usize, y: usize, size: Size) !void {
     for (0..size.height) |i| {
-        try moveCursor(writer, x, y + i);
-        for (0..size.width) |_| {
-            try writer.writeByte(' ');
+        if (try moveCursor(writer, x, y + i)) {
+            for (0..size.width) |_| {
+                try writer.writeByte(' ');
+            }
         }
     }
 }
