@@ -4,10 +4,11 @@ const inp = @import("./input.zig");
 const Size = @import("./layout.zig").Size;
 const grd = @import("./grid.zig");
 
-pub var terminal: Terminal = undefined;
+pub var terminal_size = Size{ .width = 0, .height = 0 };
+pub var tty_file_maybe: ?std.fs.File = null;
 
 fn handleSigWinch(_: c_int) callconv(.C) void {
-    terminal.updateSize() catch return;
+    terminal_size = getTerminalSize() catch return;
 }
 
 pub const Core = switch (builtin.os.tag) {
@@ -341,7 +342,6 @@ pub const Core = switch (builtin.os.tag) {
 
 pub const Terminal = struct {
     core: Core,
-    size: Size,
 
     pub fn init(allocator: std.mem.Allocator) !Terminal {
         switch (builtin.os.tag) {
@@ -354,11 +354,10 @@ pub const Terminal = struct {
                             .old_out_mode = undefined,
                         },
                     },
-                    .size = undefined,
                 };
                 try self.core.uncook();
-                try self.updateSize();
                 try self.core.tty.writer().writeAll("\x1B[?1049h"); // clear screen
+                terminal_size = try getTerminalSize();
                 return self;
             },
             else => {
@@ -375,12 +374,9 @@ pub const Terminal = struct {
                         .esc_buffer = try std.ArrayList(u8).initCapacity(allocator, 32),
                         .key_queue = std.DoublyLinkedList(inp.Key){},
                     },
-                    .size = undefined,
                 };
 
                 try self.core.uncook();
-
-                try self.updateSize();
 
                 try std.posix.sigaction(std.posix.SIG.WINCH, &std.posix.Sigaction{
                     .handler = .{ .handler = handleSigWinch },
@@ -392,6 +388,9 @@ pub const Terminal = struct {
                 self.core.raw.cc[@intFromEnum(std.posix.V.TIME)] = 1;
                 self.core.raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
                 try std.posix.tcsetattr(self.core.tty.handle, .NOW, self.core.raw);
+
+                tty_file_maybe = tty;
+                terminal_size = try getTerminalSize();
 
                 return self;
             },
@@ -405,46 +404,22 @@ pub const Terminal = struct {
             },
             else => {
                 self.core.cook() catch {};
-                self.core.tty.close();
                 self.core.esc_buffer.deinit();
                 while (self.core.key_queue.popFirst()) |node| {
                     self.core.allocator.destroy(node);
                 }
-            },
-        }
-    }
-
-    pub fn updateSize(self: *Terminal) !void {
-        switch (builtin.os.tag) {
-            .windows => {
-                const out_handle = std.io.getStdOut().handle;
-                var info: std.os.windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
-                if (0 == std.os.windows.kernel32.GetConsoleScreenBufferInfo(out_handle, &info)) {
-                    return error.FailedToGetConsoleScreenBufferInfo;
+                if (tty_file_maybe) |tty| {
+                    if (tty.handle == self.core.tty.handle) {
+                        tty_file_maybe = null;
+                    }
                 }
-                const width = info.srWindow.Right - info.srWindow.Left + 1;
-                const height = info.srWindow.Bottom - info.srWindow.Top + 1;
-                self.size = .{
-                    .width = if (width < 0) 0 else @intCast(width),
-                    .height = if (height < 0) 0 else @intCast(height),
-                };
-            },
-            else => {
-                var win_size = std.mem.zeroes(std.posix.winsize);
-                const err = std.os.linux.ioctl(self.core.tty.handle, std.posix.T.IOCGWINSZ, @intFromPtr(&win_size));
-                if (std.posix.errno(err) != .SUCCESS) {
-                    return std.posix.unexpectedErrno(@enumFromInt(err));
-                }
-                self.size = .{
-                    .width = win_size.ws_col,
-                    .height = win_size.ws_row,
-                };
+                self.core.tty.close();
             },
         }
     }
 
     pub fn write(self: *Terminal, txt: []const u8, x: usize, y: usize) !void {
-        if (y >= 0 and y < self.size.height) {
+        if (y >= 0 and y < terminal_size.height) {
             const writer = self.core.tty.writer();
             try moveCursor(writer, x, y);
             try writer.writeAll(txt);
@@ -452,7 +427,7 @@ pub const Terminal = struct {
     }
 
     pub fn writeHoriz(self: Terminal, char: []const u8, x: usize, y: usize, width: usize) !void {
-        if (y >= 0 and y < self.size.height) {
+        if (y >= 0 and y < terminal_size.height) {
             const writer = self.core.tty.writer();
             try moveCursor(writer, x, y);
             for (0..width) |_| {
@@ -462,7 +437,7 @@ pub const Terminal = struct {
     }
 
     pub fn writeVert(self: Terminal, char: []const u8, x: usize, y: usize, height: usize) !void {
-        if (y >= 0 and y < self.size.height) {
+        if (y >= 0 and y < terminal_size.height) {
             const writer = self.core.tty.writer();
             for (0..height) |i| {
                 try moveCursor(writer, x, y + i);
@@ -476,7 +451,7 @@ pub const Terminal = struct {
     }
 
     pub fn render(self: *Terminal, root_widget: anytype, last_grid: *grd.Grid, last_size: *Size) !void {
-        const root_size = Size{ .width = self.size.width, .height = self.size.height };
+        const root_size = Size{ .width = terminal_size.width, .height = terminal_size.height };
         if (root_size.width == 0 or root_size.height == 0) {
             return;
         }
@@ -535,6 +510,39 @@ pub const Terminal = struct {
         }
     }
 };
+
+pub fn getTerminalSize() !Size {
+    switch (builtin.os.tag) {
+        .windows => {
+            const out_handle = std.io.getStdOut().handle;
+            var info: std.os.windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
+            if (0 == std.os.windows.kernel32.GetConsoleScreenBufferInfo(out_handle, &info)) {
+                return error.FailedToGetConsoleScreenBufferInfo;
+            }
+            const width = info.srWindow.Right - info.srWindow.Left + 1;
+            const height = info.srWindow.Bottom - info.srWindow.Top + 1;
+            return .{
+                .width = if (width < 0) 0 else @intCast(width),
+                .height = if (height < 0) 0 else @intCast(height),
+            };
+        },
+        else => {
+            if (tty_file_maybe) |tty_file| {
+                var win_size = std.mem.zeroes(std.posix.winsize);
+                const err = std.os.linux.ioctl(tty_file.handle, std.posix.T.IOCGWINSZ, @intFromPtr(&win_size));
+                if (std.posix.errno(err) != .SUCCESS) {
+                    return std.posix.unexpectedErrno(@enumFromInt(err));
+                }
+                return .{
+                    .width = win_size.ws_col,
+                    .height = win_size.ws_row,
+                };
+            } else {
+                return .{ .width = 0, .height = 0 };
+            }
+        },
+    }
+}
 
 pub fn moveCursor(writer: anytype, x: usize, y: usize) !void {
     switch (builtin.os.tag) {
