@@ -552,3 +552,69 @@ pub fn Scroll(comptime Widget: type) type {
         }
     };
 }
+
+pub fn Stack(comptime Widget: type) type {
+    return struct {
+        focus: Focus,
+        children: std.AutoArrayHashMap(usize, Widget),
+
+        pub fn init(allocator: std.mem.Allocator) Stack(Widget) {
+            return .{
+                .focus = Focus.init(allocator),
+                .children = std.AutoArrayHashMap(usize, Widget).init(allocator),
+            };
+        }
+
+        pub fn deinit(self: *Stack(Widget)) void {
+            self.focus.deinit();
+            for (self.children.values()) |*child| {
+                child.deinit();
+            }
+            self.children.deinit();
+        }
+
+        pub fn build(self: *Stack(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
+            self.clearGrid();
+            self.getFocus().clear();
+            if (self.getSelected()) |selected_widget| {
+                try selected_widget.build(constraint, root_focus);
+                if (selected_widget.getGrid()) |child_grid| {
+                    try self.getFocus().addChild(selected_widget.getFocus(), child_grid.size, 0, 0);
+                }
+            }
+        }
+
+        pub fn input(self: *Stack(Widget), key: inp.Key, root_focus: *Focus) !void {
+            if (self.getSelected()) |selected_widget| {
+                try selected_widget.input(key, root_focus);
+            }
+        }
+
+        pub fn clearGrid(self: *Stack(Widget)) void {
+            if (self.getSelected()) |selected_widget| {
+                selected_widget.clearGrid();
+            }
+        }
+
+        pub fn getGrid(self: Stack(Widget)) ?Grid {
+            if (self.getSelected()) |selected_widget| {
+                return selected_widget.getGrid();
+            } else {
+                return null;
+            }
+        }
+
+        pub fn getFocus(self: *Stack(Widget)) *Focus {
+            return &self.focus;
+        }
+
+        pub fn getSelected(self: Stack(Widget)) ?*Widget {
+            if (self.focus.child_id) |child_id| {
+                if (self.children.getIndex(child_id)) |current_index| {
+                    return &self.children.values()[current_index];
+                }
+            }
+            return null;
+        }
+    };
+}
