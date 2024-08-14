@@ -389,7 +389,11 @@ pub const Terminal = struct {
                 self.core.raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
                 try std.posix.tcsetattr(self.core.tty.handle, .NOW, self.core.raw);
 
-                tty_file_maybe = tty;
+                if (tty_file_maybe) |_| {
+                    return error.TtyAlreadyOpen;
+                } else {
+                    tty_file_maybe = tty;
+                }
                 terminal_size = try getTerminalSize();
 
                 return self;
@@ -408,12 +412,8 @@ pub const Terminal = struct {
                 while (self.core.key_queue.popFirst()) |node| {
                     self.core.allocator.destroy(node);
                 }
-                if (tty_file_maybe) |tty| {
-                    if (tty.handle == self.core.tty.handle) {
-                        tty_file_maybe = null;
-                    }
-                }
                 self.core.tty.close();
+                tty_file_maybe = null;
             },
         }
     }
@@ -541,7 +541,7 @@ pub fn getTerminalSize() !Size {
                     .height = win_size.ws_row,
                 };
             } else {
-                return .{ .width = 0, .height = 0 };
+                return error.TtyNotOpen;
             }
         },
     }
