@@ -87,6 +87,7 @@ pub fn Box(comptime Widget: type) type {
         pub const BorderStyle = enum {
             hidden,
             single,
+            dashed,
             double,
         };
 
@@ -288,41 +289,43 @@ pub fn Box(comptime Widget: type) type {
             if (self.border_style) |border_style| {
                 const horiz_line = switch (border_style) {
                     .hidden => " ",
-                    .single => "─",
+                    .single, .dashed => "─",
                     .double => "═",
                 };
                 const vert_line = switch (border_style) {
                     .hidden => " ",
-                    .single => "│",
+                    .single, .dashed => "│",
                     .double => "║",
                 };
                 const top_left_corner = switch (border_style) {
                     .hidden => " ",
-                    .single => "┌",
+                    .single, .dashed => "┌",
                     .double => "╔",
                 };
                 const top_right_corner = switch (border_style) {
                     .hidden => " ",
-                    .single => "┐",
+                    .single, .dashed => "┐",
                     .double => "╗",
                 };
                 const bottom_left_corner = switch (border_style) {
                     .hidden => " ",
-                    .single => "└",
+                    .single, .dashed => "└",
                     .double => "╚",
                 };
                 const bottom_right_corner = switch (border_style) {
                     .hidden => " ",
-                    .single => "┘",
+                    .single, .dashed => "┘",
                     .double => "╝",
                 };
                 // top and bottom border
                 for (1..grid.size.width - 1) |x| {
+                    if (border_style == .dashed and x % 2 == 1) continue;
                     grid.cells.items[try grid.cells.at(.{ 0, x })].rune = horiz_line;
                     grid.cells.items[try grid.cells.at(.{ grid.size.height - 1, x })].rune = horiz_line;
                 }
                 // left and right border
                 for (1..grid.size.height - 1) |y| {
+                    if (border_style == .dashed and y % 2 == 1) continue;
                     grid.cells.items[try grid.cells.at(.{ y, 0 })].rune = vert_line;
                     grid.cells.items[try grid.cells.at(.{ y, grid.size.width - 1 })].rune = vert_line;
                 }
