@@ -1,5 +1,5 @@
 const std = @import("std");
-const xitui = @import("./lib.zig");
+const xitui = @import("xitui");
 const wgt = xitui.widget;
 const layout = xitui.layout;
 const inp = xitui.input;
