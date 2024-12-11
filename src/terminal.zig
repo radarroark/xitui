@@ -143,12 +143,10 @@ pub const Core = switch (builtin.os.tag) {
                 var event_buffer: [1]INPUT_RECORD = undefined;
                 var num_events_read: std.os.windows.DWORD = undefined;
                 // exit early if there is no event ready to read
-                std.os.windows.WaitForSingleObject(in_handle, 0) catch |err| {
-                    switch (err) {
-                        error.WaitAbandoned => return null,
-                        error.WaitTimeOut => return null,
-                        error.Unexpected => return err,
-                    }
+                std.os.windows.WaitForSingleObject(in_handle, 0) catch |err| switch (err) {
+                    error.WaitAbandoned => return null,
+                    error.WaitTimeOut => return null,
+                    error.Unexpected => |e| return e,
                 };
                 // read events from the buffer
                 if (0 == ReadConsoleInputW(in_handle, @ptrCast(&event_buffer), event_buffer.len, &num_events_read)) {
