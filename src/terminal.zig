@@ -376,7 +376,7 @@ pub const Terminal = struct {
 
                 try self.core.uncook();
 
-                try std.posix.sigaction(std.posix.SIG.WINCH, &std.posix.Sigaction{
+                std.posix.sigaction(std.posix.SIG.WINCH, &std.posix.Sigaction{
                     .handler = .{ .handler = handleSigWinch },
                     .mask = std.posix.empty_sigset,
                     .flags = 0,
@@ -535,8 +535,8 @@ pub fn getTerminalSize() !Size {
                     return std.posix.unexpectedErrno(@enumFromInt(err));
                 }
                 return .{
-                    .width = win_size.ws_col,
-                    .height = win_size.ws_row,
+                    .width = win_size.col,
+                    .height = win_size.row,
                 };
             } else {
                 return error.TtyNotOpen;
