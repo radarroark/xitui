@@ -1,5 +1,5 @@
 .{
-    .name = "xitui",
+    .name = .xitui,
     .version = "0.0.0",
     .dependencies = .{},
     .paths = .{
@@ -8,4 +8,5 @@
         "src",
         "LICENSE",
     },
+    .fingerprint = 0x7c707059c8d583f9,
 }
