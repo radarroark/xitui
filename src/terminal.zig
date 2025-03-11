@@ -457,6 +457,7 @@ pub const Terminal = struct {
                 };
             },
             else => {
+                try std.posix.tcsetattr(self.core.tty.handle, .FLUSH, self.core.raw);
                 var win_size = std.mem.zeroes(std.posix.winsize);
                 const err = std.os.linux.ioctl(self.core.tty.handle, std.posix.T.IOCGWINSZ, @intFromPtr(&win_size));
                 if (std.posix.errno(err) != .SUCCESS) {
@@ -483,11 +484,7 @@ pub const Terminal = struct {
     }
 
     pub fn render(self: *Terminal, root_widget: anytype, last_grid: *grd.Grid, last_size: *Size) !void {
-        // unresolved issue with doing this syscall on macos.
-        // it works in Terminal.init, but calling it here leads to a crash.
-        if (.macos != builtin.os.tag) {
-            self.size = try self.getSize();
-        }
+        self.size = try self.getSize();
 
         const root_size = Size{ .width = self.size.width, .height = self.size.height };
         if (root_size.width == 0 or root_size.height == 0) {
