@@ -113,7 +113,7 @@ pub const Core = switch (builtin.os.tag) {
                         var bytes_written: usize = 0;
                         for (0..num_chars_written) |_| {
                             const slice = iter.nextCodepointSlice() orelse return error.UnexpectedCharCount;
-                            bytes_written = slice.len;
+                            bytes_written += slice.len;
                         }
                         return bytes_written;
                     }
