@@ -11,9 +11,12 @@ fn handleSigWinch(_: c_int) callconv(.C) void {
     terminal_size = getTerminalSize() catch return;
 }
 
+const write_buffer_size = 4096;
+
 pub const Core = switch (builtin.os.tag) {
     .windows => struct {
         tty: Tty,
+        writer: std.io.BufferedWriter(write_buffer_size, Tty.Writer),
         allocator: std.mem.Allocator,
 
         pub const KEY_EVENT_RECORD = extern struct {
@@ -73,15 +76,14 @@ pub const Core = switch (builtin.os.tag) {
         ) callconv(std.os.windows.WINAPI) std.os.windows.BOOL;
 
         pub const Tty = struct {
-            allocator: std.mem.Allocator,
             old_out_mode: std.os.windows.DWORD,
 
             pub const Writer = struct {
-                allocator: std.mem.Allocator,
+                pub const Error = error{ InvalidUtf8, FailedToWriteConsoleW, UnexpectedCharCount } || std.unicode.Utf16LeIterator.NextCodepointError;
 
                 pub fn print(self: Writer, comptime format: []const u8, args: anytype) !void {
-                    const bytes = try std.fmt.allocPrint(self.allocator, format, args);
-                    defer self.allocator.free(bytes);
+                    var buffer = [_]u8{0} ** write_buffer_size;
+                    const bytes = try std.fmt.bufPrint(&buffer, format, args);
                     try self.writeAll(bytes);
                 }
 
@@ -89,22 +91,44 @@ pub const Core = switch (builtin.os.tag) {
                     try self.writeAll(&[_]u8{byte});
                 }
 
-                pub fn writeAll(self: Writer, bytes: []const u8) !void {
-                    const out_handle = std.io.getStdOut().handle;
-                    const bytes_w = try std.unicode.utf8ToUtf16LeAlloc(self.allocator, bytes);
-                    defer self.allocator.free(bytes_w);
-                    const num_chars_to_write: std.os.windows.DWORD = @intCast(try std.unicode.utf8CountCodepoints(bytes));
+                pub fn writeAll(self: Writer, utf8_bytes: []const u8) !void {
+                    var total_written: usize = 0;
+                    while (total_written < utf8_bytes.len) {
+                        total_written += try self.write(utf8_bytes[total_written..]);
+                    }
+                }
+
+                pub fn write(_: Writer, utf8_bytes: []const u8) !usize {
+                    var utf16_buffer = [_]u16{0} ** write_buffer_size;
+                    const size = try std.unicode.utf8ToUtf16Le(&utf16_buffer, utf8_bytes);
+                    const utf16_bytes = utf16_buffer[0..size];
+
+                    const num_chars = try std.unicode.utf16CountCodepoints(utf16_bytes);
                     var num_chars_written: std.os.windows.DWORD = undefined;
-                    if (0 == std.os.windows.kernel32.WriteConsoleW(out_handle, @ptrCast(bytes_w), num_chars_to_write, &num_chars_written, null)) {
+
+                    const out_handle = std.io.getStdOut().handle;
+                    if (0 == std.os.windows.kernel32.WriteConsoleW(out_handle, utf16_bytes.ptr, @intCast(num_chars), &num_chars_written, null)) {
                         return error.FailedToWriteConsoleW;
+                    }
+
+                    // return the number of bytes written
+                    if (num_chars == num_chars_written) {
+                        return utf8_bytes.len;
+                    } else {
+                        const text = try std.unicode.Utf8View.init(utf8_bytes);
+                        var iter = text.iterator();
+                        var bytes_written: usize = 0;
+                        for (0..num_chars_written) |_| {
+                            const slice = iter.nextCodepointSlice() orelse return error.UnexpectedCharCount;
+                            bytes_written = slice.len;
+                        }
+                        return bytes_written;
                     }
                 }
             };
 
-            pub fn writer(self: Tty) Writer {
-                return .{
-                    .allocator = self.allocator,
-                };
+            pub fn writer(_: Tty) Writer {
+                return .{};
             }
         };
 
@@ -120,18 +144,20 @@ pub const Core = switch (builtin.os.tag) {
             }
             errdefer self.cook() catch {};
 
-            const writer = self.tty.writer();
+            const writer = self.writer.writer();
             try hideCursor(writer);
             try enterAlt(writer);
             try clearStyle(writer);
+            try self.writer.flush();
         }
 
         fn cook(self: *Core) !void {
-            const writer = self.tty.writer();
+            const writer = self.writer.writer();
             try clearStyle(writer);
             try leaveAlt(writer);
             try showCursor(writer);
             try attributeReset(writer);
+            try self.writer.flush();
 
             const out_handle = std.io.getStdOut().handle;
             _ = std.os.windows.kernel32.SetConsoleMode(out_handle, self.tty.old_out_mode);
@@ -198,6 +224,7 @@ pub const Core = switch (builtin.os.tag) {
     },
     else => struct {
         tty: std.fs.File,
+        writer: std.io.BufferedWriter(write_buffer_size, std.fs.File.Writer),
         allocator: std.mem.Allocator,
         cooked_termios: std.posix.termios,
         raw: std.posix.termios,
@@ -205,7 +232,6 @@ pub const Core = switch (builtin.os.tag) {
         key_queue: std.DoublyLinkedList(inp.Key),
 
         fn uncook(self: *Core) !void {
-            const writer = self.tty.writer();
             self.cooked_termios = try std.posix.tcgetattr(self.tty.handle);
             errdefer self.cook() catch {};
 
@@ -218,17 +244,21 @@ pub const Core = switch (builtin.os.tag) {
             self.raw.cc[@intFromEnum(std.posix.V.MIN)] = 1;
             try std.posix.tcsetattr(self.tty.handle, .FLUSH, self.raw);
 
+            const writer = self.writer.writer();
             try hideCursor(writer);
             try enterAlt(writer);
             try clearStyle(writer);
+            try self.writer.flush();
         }
 
         fn cook(self: *Core) !void {
-            const writer = self.tty.writer();
+            const writer = self.writer.writer();
             try clearStyle(writer);
             try leaveAlt(writer);
             try showCursor(writer);
             try attributeReset(writer);
+            try self.writer.flush();
+
             try std.posix.tcsetattr(self.tty.handle, .FLUSH, self.cooked_termios);
         }
 
@@ -344,17 +374,18 @@ pub const Terminal = struct {
     pub fn init(allocator: std.mem.Allocator) !Terminal {
         switch (builtin.os.tag) {
             .windows => {
+                const tty = Core.Tty{
+                    .old_out_mode = undefined,
+                };
                 var self = Terminal{
                     .core = .{
+                        .tty = tty,
+                        .writer = std.io.BufferedWriter(write_buffer_size, Core.Tty.Writer){ .unbuffered_writer = tty.writer() },
                         .allocator = allocator,
-                        .tty = .{
-                            .allocator = allocator,
-                            .old_out_mode = undefined,
-                        },
                     },
                 };
                 try self.core.uncook();
-                try self.core.tty.writer().writeAll("\x1B[?1049h"); // clear screen
+                try self.core.writer.unbuffered_writer.writeAll("\x1B[?1049h"); // clear screen
                 terminal_size = try getTerminalSize();
                 return self;
             },
@@ -365,6 +396,7 @@ pub const Terminal = struct {
                 var self = Terminal{
                     .core = .{
                         .tty = tty,
+                        .writer = std.io.BufferedWriter(write_buffer_size, std.fs.File.Writer){ .unbuffered_writer = tty.writer() },
                         .allocator = allocator,
                         .cooked_termios = undefined,
                         .raw = undefined,
@@ -416,39 +448,17 @@ pub const Terminal = struct {
         }
     }
 
-    pub fn write(self: *Terminal, txt: []const u8, x: usize, y: usize) !void {
+    pub fn readKey(self: *Terminal) !?inp.Key {
+        return try self.core.readKey();
+    }
+
+    fn write(self: *Terminal, txt: []const u8, x: usize, y: usize) !void {
         if (y >= 0 and y < terminal_size.height) {
-            const writer = self.core.tty.writer();
+            const writer = self.core.writer.writer();
             if (try moveCursor(writer, x, y)) {
                 try writer.writeAll(txt);
             }
         }
-    }
-
-    pub fn writeHoriz(self: Terminal, char: []const u8, x: usize, y: usize, width: usize) !void {
-        if (y >= 0 and y < terminal_size.height) {
-            const writer = self.core.tty.writer();
-            if (try moveCursor(writer, x, y)) {
-                for (0..width) |_| {
-                    try writer.writeAll(char);
-                }
-            }
-        }
-    }
-
-    pub fn writeVert(self: Terminal, char: []const u8, x: usize, y: usize, height: usize) !void {
-        if (y >= 0 and y < terminal_size.height) {
-            const writer = self.core.tty.writer();
-            for (0..height) |i| {
-                if (try moveCursor(writer, x, y + i)) {
-                    try writer.writeAll(char);
-                }
-            }
-        }
-    }
-
-    pub fn readKey(self: *Terminal) !?inp.Key {
-        return try self.core.readKey();
     }
 
     pub fn render(self: *Terminal, root_widget: anytype, last_grid: *grd.Grid, last_size: *Size) !void {
@@ -473,7 +483,7 @@ pub const Terminal = struct {
                 .min_size = .{ .width = null, .height = null },
                 .max_size = .{ .width = root_size.width, .height = root_size.height },
             }, root_widget.getFocus());
-            try clearRect(self.core.tty.writer(), 0, 0, root_size);
+            try clearRect(self.core.writer.writer(), 0, 0, root_size);
             last_size.* = root_size;
 
             // render the grid
@@ -509,6 +519,8 @@ pub const Terminal = struct {
                 }
             }
         }
+
+        try self.core.writer.flush();
     }
 };
 
@@ -546,27 +558,19 @@ pub fn getTerminalSize() !Size {
 }
 
 pub fn moveCursor(writer: anytype, x: usize, y: usize) !bool {
-    switch (builtin.os.tag) {
-        .windows => {
-            const out_handle = std.io.getStdOut().handle;
-            const pos = std.os.windows.COORD{
-                .X = @intCast(x),
-                .Y = @intCast(y),
-            };
-            terminal_size = try getTerminalSize();
-            if (pos.X >= terminal_size.width or pos.Y >= terminal_size.height) {
-                return false;
-            }
-            if (0 == std.os.windows.kernel32.SetConsoleCursorPosition(out_handle, pos)) {
-                return error.FailedToSetConsoleCursorPosition;
-            }
-            return true;
-        },
-        else => {
-            _ = try writer.print("\x1B[{};{}H", .{ y + 1, x + 1 });
-            return true;
-        },
+    if (.windows == builtin.os.tag) {
+        const pos = std.os.windows.COORD{
+            .X = @intCast(x),
+            .Y = @intCast(y),
+        };
+        terminal_size = try getTerminalSize();
+        if (pos.X >= terminal_size.width or pos.Y >= terminal_size.height) {
+            return false;
+        }
     }
+
+    _ = try writer.print("\x1B[{};{}H", .{ y + 1, x + 1 });
+    return true;
 }
 
 pub fn enterAlt(writer: anytype) !void {
