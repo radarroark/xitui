@@ -455,9 +455,8 @@ pub const Terminal = struct {
     fn write(self: *Terminal, txt: []const u8, x: usize, y: usize) !void {
         if (y >= 0 and y < terminal_size.height) {
             const writer = self.core.writer.writer();
-            if (try moveCursor(writer, x, y)) {
-                try writer.writeAll(txt);
-            }
+            try moveCursor(writer, x, y);
+            try writer.writeAll(txt);
         }
     }
 
@@ -557,20 +556,8 @@ pub fn getTerminalSize() !Size {
     }
 }
 
-pub fn moveCursor(writer: anytype, x: usize, y: usize) !bool {
-    if (.windows == builtin.os.tag) {
-        const pos = std.os.windows.COORD{
-            .X = @intCast(x),
-            .Y = @intCast(y),
-        };
-        terminal_size = try getTerminalSize();
-        if (pos.X >= terminal_size.width or pos.Y >= terminal_size.height) {
-            return false;
-        }
-    }
-
+pub fn moveCursor(writer: anytype, x: usize, y: usize) !void {
     _ = try writer.print("\x1B[{};{}H", .{ y + 1, x + 1 });
-    return true;
 }
 
 pub fn enterAlt(writer: anytype) !void {
@@ -607,10 +594,9 @@ pub fn clearStyle(writer: anytype) !void {
 
 pub fn clearRect(writer: anytype, x: usize, y: usize, size: Size) !void {
     for (0..size.height) |i| {
-        if (try moveCursor(writer, x, y + i)) {
-            for (0..size.width) |_| {
-                try writer.writeByte(' ');
-            }
+        try moveCursor(writer, x, y + i);
+        for (0..size.width) |_| {
+            try writer.writeByte(' ');
         }
     }
 }
