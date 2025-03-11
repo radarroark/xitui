@@ -393,6 +393,10 @@ pub const Terminal = struct {
                 var tty = try std.fs.cwd().openFile("/dev/tty", .{ .mode = .read_write });
                 errdefer tty.close();
 
+                // just needs to be able to hold the largest possible escape code
+                var esc_buffer = try std.ArrayList(u8).initCapacity(allocator, 32);
+                errdefer esc_buffer.deinit();
+
                 var self = Terminal{
                     .core = .{
                         .tty = tty,
@@ -400,13 +404,13 @@ pub const Terminal = struct {
                         .allocator = allocator,
                         .cooked_termios = undefined,
                         .raw = undefined,
-                        // just needs to be able to hold the largest possible escape code
-                        .esc_buffer = try std.ArrayList(u8).initCapacity(allocator, 32),
+                        .esc_buffer = esc_buffer,
                         .key_queue = std.DoublyLinkedList(inp.Key){},
                     },
                 };
 
                 try self.core.uncook();
+                errdefer self.core.cook() catch {};
 
                 std.posix.sigaction(std.posix.SIG.WINCH, &std.posix.Sigaction{
                     .handler = .{ .handler = handleSigWinch },
