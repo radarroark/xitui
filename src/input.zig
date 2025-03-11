@@ -1,5 +1,6 @@
 pub const Key = union(enum) {
     unknown,
+    ctrl_c,
     arrow_up,
     arrow_down,
     arrow_right,

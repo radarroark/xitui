@@ -6,6 +6,8 @@ const grd = @import("./grid.zig");
 
 const write_buffer_size = 4096;
 
+pub var quit = false;
+
 pub const Core = switch (builtin.os.tag) {
     .windows => struct {
         tty: Tty,
@@ -384,6 +386,20 @@ pub const Terminal = struct {
                 try self.core.uncook();
                 errdefer self.core.cook() catch {};
 
+                const handler = struct {
+                    fn run(fdw_ctrl_type: std.os.windows.DWORD) callconv(.C) std.os.windows.BOOL {
+                        switch (fdw_ctrl_type) {
+                            std.os.windows.CTRL_C_EVENT => {
+                                quit = true;
+                                return std.os.windows.TRUE;
+                            },
+                            else => {},
+                        }
+                        return std.os.windows.FALSE;
+                    }
+                }.run;
+                try std.os.windows.SetConsoleCtrlHandler(handler, true);
+
                 try self.core.writer.unbuffered_writer.writeAll("\x1B[?1049h"); // clear screen
                 self.size = try self.getSize();
 
@@ -412,6 +428,17 @@ pub const Terminal = struct {
 
                 try self.core.uncook();
                 errdefer self.core.cook() catch {};
+
+                const handler = struct {
+                    fn run(_: c_int) callconv(.C) void {
+                        quit = true;
+                    }
+                }.run;
+                std.posix.sigaction(std.posix.SIG.INT, &std.posix.Sigaction{
+                    .handler = .{ .handler = handler },
+                    .mask = std.posix.empty_sigset,
+                    .flags = 0,
+                }, null);
 
                 // set non-blocking
                 self.core.raw.cc[@intFromEnum(std.posix.V.TIME)] = 1;
