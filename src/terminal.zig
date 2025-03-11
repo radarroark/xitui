@@ -4,13 +4,6 @@ const inp = @import("./input.zig");
 const Size = @import("./layout.zig").Size;
 const grd = @import("./grid.zig");
 
-pub var terminal_size = Size{ .width = 0, .height = 0 };
-pub var tty_file_maybe: ?std.fs.File = null;
-
-fn handleSigWinch(_: c_int) callconv(.C) void {
-    terminal_size = getTerminalSize() catch return;
-}
-
 const write_buffer_size = 4096;
 
 pub const Core = switch (builtin.os.tag) {
@@ -370,6 +363,7 @@ pub const Core = switch (builtin.os.tag) {
 
 pub const Terminal = struct {
     core: Core,
+    size: Size,
 
     pub fn init(allocator: std.mem.Allocator) !Terminal {
         switch (builtin.os.tag) {
@@ -383,10 +377,11 @@ pub const Terminal = struct {
                         .writer = std.io.BufferedWriter(write_buffer_size, Core.Tty.Writer){ .unbuffered_writer = tty.writer() },
                         .allocator = allocator,
                     },
+                    .size = .{ .width = 0, .height = 0 },
                 };
                 try self.core.uncook();
                 try self.core.writer.unbuffered_writer.writeAll("\x1B[?1049h"); // clear screen
-                terminal_size = try getTerminalSize();
+                self.size = try self.getSize();
                 return self;
             },
             else => {
@@ -407,28 +402,18 @@ pub const Terminal = struct {
                         .esc_buffer = esc_buffer,
                         .key_queue = std.DoublyLinkedList(inp.Key){},
                     },
+                    .size = .{ .width = 0, .height = 0 },
                 };
 
                 try self.core.uncook();
                 errdefer self.core.cook() catch {};
-
-                std.posix.sigaction(std.posix.SIG.WINCH, &std.posix.Sigaction{
-                    .handler = .{ .handler = handleSigWinch },
-                    .mask = std.posix.empty_sigset,
-                    .flags = 0,
-                }, null);
 
                 // set non-blocking
                 self.core.raw.cc[@intFromEnum(std.posix.V.TIME)] = 1;
                 self.core.raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
                 try std.posix.tcsetattr(self.core.tty.handle, .NOW, self.core.raw);
 
-                if (tty_file_maybe) |_| {
-                    return error.TtyAlreadyOpen;
-                } else {
-                    tty_file_maybe = tty;
-                }
-                terminal_size = try getTerminalSize();
+                self.size = try self.getSize();
 
                 return self;
             },
@@ -447,7 +432,35 @@ pub const Terminal = struct {
                     self.core.allocator.destroy(node);
                 }
                 self.core.tty.close();
-                tty_file_maybe = null;
+            },
+        }
+    }
+
+    pub fn getSize(self: *const Terminal) !Size {
+        switch (builtin.os.tag) {
+            .windows => {
+                const out_handle = std.io.getStdOut().handle;
+                var info: std.os.windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
+                if (0 == std.os.windows.kernel32.GetConsoleScreenBufferInfo(out_handle, &info)) {
+                    return error.FailedToGetConsoleScreenBufferInfo;
+                }
+                const width = info.srWindow.Right - info.srWindow.Left + 1;
+                const height = info.srWindow.Bottom - info.srWindow.Top + 1;
+                return .{
+                    .width = if (width < 0) 0 else @intCast(width),
+                    .height = if (height < 0) 0 else @intCast(height),
+                };
+            },
+            else => {
+                var win_size = std.mem.zeroes(std.posix.winsize);
+                const err = std.os.linux.ioctl(self.core.tty.handle, std.posix.T.IOCGWINSZ, @intFromPtr(&win_size));
+                if (std.posix.errno(err) != .SUCCESS) {
+                    return std.posix.unexpectedErrno(@enumFromInt(err));
+                }
+                return .{
+                    .width = win_size.col,
+                    .height = win_size.row,
+                };
             },
         }
     }
@@ -457,7 +470,7 @@ pub const Terminal = struct {
     }
 
     fn write(self: *Terminal, txt: []const u8, x: usize, y: usize) !void {
-        if (y >= 0 and y < terminal_size.height) {
+        if (y >= 0 and y < self.size.height) {
             const writer = self.core.writer.writer();
             try moveCursor(writer, x, y);
             try writer.writeAll(txt);
@@ -465,7 +478,13 @@ pub const Terminal = struct {
     }
 
     pub fn render(self: *Terminal, root_widget: anytype, last_grid: *grd.Grid, last_size: *Size) !void {
-        const root_size = Size{ .width = terminal_size.width, .height = terminal_size.height };
+        // unresolved issue with doing this syscall on macos.
+        // it works in Terminal.init, but calling it here leads to a crash.
+        if (.macos != builtin.os.tag) {
+            self.size = try self.getSize();
+        }
+
+        const root_size = Size{ .width = self.size.width, .height = self.size.height };
         if (root_size.width == 0 or root_size.height == 0) {
             return;
         }
@@ -526,39 +545,6 @@ pub const Terminal = struct {
         try self.core.writer.flush();
     }
 };
-
-pub fn getTerminalSize() !Size {
-    switch (builtin.os.tag) {
-        .windows => {
-            const out_handle = std.io.getStdOut().handle;
-            var info: std.os.windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
-            if (0 == std.os.windows.kernel32.GetConsoleScreenBufferInfo(out_handle, &info)) {
-                return error.FailedToGetConsoleScreenBufferInfo;
-            }
-            const width = info.srWindow.Right - info.srWindow.Left + 1;
-            const height = info.srWindow.Bottom - info.srWindow.Top + 1;
-            return .{
-                .width = if (width < 0) 0 else @intCast(width),
-                .height = if (height < 0) 0 else @intCast(height),
-            };
-        },
-        else => {
-            if (tty_file_maybe) |tty_file| {
-                var win_size = std.mem.zeroes(std.posix.winsize);
-                const err = std.os.linux.ioctl(tty_file.handle, std.posix.T.IOCGWINSZ, @intFromPtr(&win_size));
-                if (std.posix.errno(err) != .SUCCESS) {
-                    return std.posix.unexpectedErrno(@enumFromInt(err));
-                }
-                return .{
-                    .width = win_size.col,
-                    .height = win_size.row,
-                };
-            } else {
-                return error.TtyNotOpen;
-            }
-        },
-    }
-}
 
 pub fn moveCursor(writer: anytype, x: usize, y: usize) !void {
     _ = try writer.print("\x1B[{};{}H", .{ y + 1, x + 1 });
