@@ -371,6 +371,7 @@ pub const Terminal = struct {
                 const tty = Core.Tty{
                     .old_out_mode = undefined,
                 };
+
                 var self = Terminal{
                     .core = .{
                         .tty = tty,
@@ -379,9 +380,13 @@ pub const Terminal = struct {
                     },
                     .size = .{ .width = 0, .height = 0 },
                 };
+
                 try self.core.uncook();
+                errdefer self.core.cook() catch {};
+
                 try self.core.writer.unbuffered_writer.writeAll("\x1B[?1049h"); // clear screen
                 self.size = try self.getSize();
+
                 return self;
             },
             else => {
