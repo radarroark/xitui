@@ -499,7 +499,14 @@ pub const Terminal = struct {
     }
 
     pub fn readKey(self: *Terminal) !?inp.Key {
-        return try self.core.readKey();
+        return self.core.readKey() catch |err| {
+            // ignore error if terminal is quitting (SIGINT was sent)
+            if (quit) {
+                return null;
+            } else {
+                return err;
+            }
+        };
     }
 
     fn write(self: *Terminal, txt: []const u8, x: usize, y: usize) !void {
@@ -511,7 +518,14 @@ pub const Terminal = struct {
     }
 
     pub fn render(self: *Terminal, root_widget: anytype, last_grid: *grd.Grid, last_size: *Size) !void {
-        self.size = try self.getSize();
+        self.size = self.getSize() catch |err| {
+            // ignore error if terminal is quitting (SIGINT was sent)
+            if (quit) {
+                return;
+            } else {
+                return err;
+            }
+        };
 
         const root_size = Size{ .width = self.size.width, .height = self.size.height };
         if (root_size.width == 0 or root_size.height == 0) {
