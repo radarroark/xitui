@@ -52,7 +52,7 @@ pub const Widget = union(enum) {
 test "text box" {
     const allocator = std.testing.allocator;
 
-    var widget = Widget{ .text_box = try wgt.TextBox(Widget).init(allocator, "Hello, world!", .single) };
+    var widget = Widget{ .text_box = try wgt.TextBox(Widget).init(allocator, "Hello, world!", .single, .none) };
     defer widget.deinit();
 
     try widget.build(.{
@@ -68,4 +68,68 @@ test "text box" {
         \\│Hello, world!│
         \\└─────────────┘
     , str);
+}
+
+test "text box with wrapping" {
+    const allocator = std.testing.allocator;
+
+    var widget = Widget{ .text_box = try wgt.TextBox(Widget).init(allocator, "Hello, world!\nGoodbye, world!", .single, .char) };
+    defer widget.deinit();
+
+    try widget.build(.{
+        .min_size = .{ .width = null, .height = null },
+        .max_size = .{ .width = 10, .height = null },
+    }, widget.getFocus());
+
+    {
+        const str = try widget.getGrid().?.toString(allocator);
+        defer allocator.free(str);
+
+        try std.testing.expectEqualStrings(
+            \\┌────────┐
+            \\│Hello, w│
+            \\│orld!   │
+            \\│Goodbye,│
+            \\│ world! │
+            \\└────────┘
+        , str);
+    }
+
+    try widget.build(.{
+        .min_size = .{ .width = null, .height = null },
+        .max_size = .{ .width = 12, .height = null },
+    }, widget.getFocus());
+
+    {
+        const str = try widget.getGrid().?.toString(allocator);
+        defer allocator.free(str);
+
+        try std.testing.expectEqualStrings(
+            \\┌──────────┐
+            \\│Hello, wor│
+            \\│ld!       │
+            \\│Goodbye, w│
+            \\│orld!     │
+            \\└──────────┘
+        , str);
+    }
+
+    try widget.build(.{
+        .min_size = .{ .width = null, .height = null },
+        .max_size = .{ .width = 12, .height = null },
+    }, widget.getFocus());
+
+    {
+        const str = try widget.getGrid().?.toString(allocator);
+        defer allocator.free(str);
+
+        try std.testing.expectEqualStrings(
+            \\┌──────────┐
+            \\│Hello, wor│
+            \\│ld!       │
+            \\│Goodbye, w│
+            \\│orld!     │
+            \\└──────────┘
+        , str);
+    }
 }

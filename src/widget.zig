@@ -69,6 +69,14 @@ pub fn Text(comptime Widget: type) type {
     };
 }
 
+pub const BorderStyle = enum {
+    hidden,
+    single,
+    double,
+    single_dashed,
+    double_dashed,
+};
+
 pub fn Box(comptime Widget: type) type {
     return struct {
         focus: Focus,
@@ -82,14 +90,6 @@ pub fn Box(comptime Widget: type) type {
             widget: Widget,
             rect: ?layout.IRect,
             min_size: ?layout.MaybeSize,
-        };
-
-        pub const BorderStyle = enum {
-            hidden,
-            single,
-            double,
-            single_dashed,
-            double_dashed,
         };
 
         pub const Direction = enum {
@@ -364,34 +364,48 @@ pub fn Box(comptime Widget: type) type {
     };
 }
 
+pub const WrapKind = enum {
+    none,
+    char,
+};
+
 pub fn TextBox(comptime Widget: type) type {
     return struct {
         allocator: std.mem.Allocator,
         box: Box(Widget),
-        border_style: ?Box(Widget).BorderStyle,
-        lines: std.ArrayList(std.ArrayList(u8)),
+        border_style: ?BorderStyle,
+        wrap_kind: WrapKind,
+        last_wrap_width: ?usize,
+        content: []const u8,
+        lines: std.ArrayList([]const u8),
 
-        pub fn init(allocator: std.mem.Allocator, content: []const u8, border_style: ?Box(Widget).BorderStyle) !TextBox(Widget) {
-            var lines = std.ArrayList(std.ArrayList(u8)).init(allocator);
+        pub fn init(
+            allocator: std.mem.Allocator,
+            content: []const u8,
+            border_style: ?BorderStyle,
+            wrap_kind: WrapKind,
+        ) !TextBox(Widget) {
+            var lines = std.ArrayList([]const u8).init(allocator);
             errdefer {
-                for (lines.items) |*line| {
-                    line.deinit();
+                for (lines.items) |line| {
+                    allocator.free(line);
                 }
                 lines.deinit();
             }
-            var fbs = std.io.fixedBufferStream(content);
-            var reader = fbs.reader();
-            while (true) {
+
+            {
                 var line = std.ArrayList(u8).init(allocator);
                 errdefer line.deinit();
-                if (reader.streamUntilDelimiter(line.writer(), '\n', null)) {
-                    try lines.append(line);
-                } else |err| {
-                    if (err == error.EndOfStream) {
-                        try lines.append(line);
-                        break;
+
+                for (content, 0..) |ch, i| {
+                    if (ch == '\n') {
+                        try lines.append(try line.toOwnedSlice());
                     } else {
-                        return err;
+                        try line.append(ch);
+                    }
+
+                    if (i == content.len - 1) {
+                        try lines.append(try line.toOwnedSlice());
                     }
                 }
             }
@@ -399,7 +413,7 @@ pub fn TextBox(comptime Widget: type) type {
             var box = try Box(Widget).init(allocator, border_style, .vert);
             errdefer box.deinit();
             for (lines.items) |line| {
-                var text = Text(Widget).init(allocator, line.items);
+                var text = Text(Widget).init(allocator, line);
                 errdefer text.deinit();
                 try box.children.put(text.getFocus().id, .{ .widget = .{ .text = text }, .rect = null, .min_size = null });
             }
@@ -408,19 +422,66 @@ pub fn TextBox(comptime Widget: type) type {
                 .allocator = allocator,
                 .box = box,
                 .border_style = border_style,
+                .wrap_kind = wrap_kind,
+                .last_wrap_width = null,
+                .content = content,
                 .lines = lines,
             };
         }
 
         pub fn deinit(self: *TextBox(Widget)) void {
             self.box.deinit();
-            for (self.lines.items) |*line| {
-                line.deinit();
+            for (self.lines.items) |line| {
+                self.allocator.free(line);
             }
             self.lines.deinit();
         }
 
         pub fn build(self: *TextBox(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
+            if (.char == self.wrap_kind) {
+                if (constraint.max_size.width) |max_width| {
+                    const should_rewrap = if (self.last_wrap_width) |last_wrap_width| last_wrap_width != max_width else true;
+                    self.last_wrap_width = max_width;
+
+                    if (should_rewrap) {
+                        const border_size: usize = if (self.border_style) |_| 1 else 0;
+
+                        {
+                            for (self.lines.items) |line| {
+                                self.allocator.free(line);
+                            }
+                            self.lines.clearAndFree();
+
+                            var line = std.ArrayList(u8).init(self.allocator);
+                            errdefer line.deinit();
+
+                            for (self.content, 0..) |ch, i| {
+                                if (ch == '\n') {
+                                    try self.lines.append(try line.toOwnedSlice());
+                                } else {
+                                    try line.append(ch);
+                                }
+
+                                if (i == self.content.len - 1) {
+                                    try self.lines.append(try line.toOwnedSlice());
+                                } else if (line.items.len + (border_size * 2) == max_width) {
+                                    try self.lines.append(try line.toOwnedSlice());
+                                }
+                            }
+                        }
+
+                        const box = try Box(Widget).init(self.allocator, self.border_style, .vert);
+                        self.box.deinit();
+                        self.box = box;
+                        for (self.lines.items) |line| {
+                            var text = Text(Widget).init(self.allocator, line);
+                            errdefer text.deinit();
+                            try self.box.children.put(text.getFocus().id, .{ .widget = .{ .text = text }, .rect = null, .min_size = null });
+                        }
+                    }
+                }
+            }
+
             self.clearGrid();
             self.box.border_style = self.border_style;
             try self.box.build(constraint, root_focus);
