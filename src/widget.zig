@@ -397,14 +397,15 @@ pub fn TextBox(comptime Widget: type) type {
                 var line = std.ArrayList(u8).init(allocator);
                 errdefer line.deinit();
 
-                for (content, 0..) |ch, i| {
-                    if (ch == '\n') {
+                var utf8 = (try std.unicode.Utf8View.init(content)).iterator();
+                while (utf8.nextCodepointSlice()) |char| {
+                    if (std.mem.eql(u8, char, "\n")) {
                         try lines.append(try line.toOwnedSlice());
                     } else {
-                        try line.append(ch);
+                        try line.appendSlice(char);
                     }
 
-                    if (i == content.len - 1) {
+                    if (std.mem.eql(u8, utf8.peek(1), "")) {
                         try lines.append(try line.toOwnedSlice());
                     }
                 }
@@ -455,16 +456,17 @@ pub fn TextBox(comptime Widget: type) type {
                             var line = std.ArrayList(u8).init(self.allocator);
                             errdefer line.deinit();
 
-                            for (self.content, 0..) |ch, i| {
-                                if (ch == '\n') {
+                            var utf8 = (try std.unicode.Utf8View.init(self.content)).iterator();
+                            while (utf8.nextCodepointSlice()) |char| {
+                                if (std.mem.eql(u8, char, "\n")) {
                                     try self.lines.append(try line.toOwnedSlice());
                                 } else {
-                                    try line.append(ch);
+                                    try line.appendSlice(char);
                                 }
 
-                                if (i == self.content.len - 1) {
+                                if (std.mem.eql(u8, utf8.peek(1), "")) {
                                     try self.lines.append(try line.toOwnedSlice());
-                                } else if (line.items.len + (border_size * 2) == max_width) {
+                                } else if (try std.unicode.utf8CountCodepoints(line.items) + (border_size * 2) == max_width) {
                                     try self.lines.append(try line.toOwnedSlice());
                                 }
                             }

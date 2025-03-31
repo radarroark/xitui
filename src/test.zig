@@ -73,7 +73,7 @@ test "text box" {
 test "text box with wrapping" {
     const allocator = std.testing.allocator;
 
-    var widget = Widget{ .text_box = try wgt.TextBox(Widget).init(allocator, "Hello, world!\nGoodbye, world!", .single, .char) };
+    var widget = Widget{ .text_box = try wgt.TextBox(Widget).init(allocator, "Hello, world!\nGöödbye, world!", .single, .char) };
     defer widget.deinit();
 
     try widget.build(.{
@@ -89,7 +89,7 @@ test "text box with wrapping" {
             \\┌────────┐
             \\│Hello, w│
             \\│orld!   │
-            \\│Goodbye,│
+            \\│Göödbye,│
             \\│ world! │
             \\└────────┘
         , str);
@@ -108,7 +108,7 @@ test "text box with wrapping" {
             \\┌──────────┐
             \\│Hello, wor│
             \\│ld!       │
-            \\│Goodbye, w│
+            \\│Göödbye, w│
             \\│orld!     │
             \\└──────────┘
         , str);
@@ -127,7 +127,7 @@ test "text box with wrapping" {
             \\┌──────────┐
             \\│Hello, wor│
             \\│ld!       │
-            \\│Goodbye, w│
+            \\│Göödbye, w│
             \\│orld!     │
             \\└──────────┘
         , str);
