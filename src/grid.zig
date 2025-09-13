@@ -83,25 +83,25 @@ pub const Grid = struct {
             return error.EmptyGrid;
         }
 
-        var buffer = std.ArrayList(u8).init(allocator);
-        errdefer buffer.deinit();
+        var buffer = std.ArrayList(u8){};
+        errdefer buffer.deinit(allocator);
 
         for (0..self.size.height) |y| {
             for (0..self.size.width) |x| {
                 if (self.cells.items[try self.cells.at(.{ y, x })].rune) |rune| {
                     for (rune) |byte| {
-                        try buffer.append(byte);
+                        try buffer.append(allocator, byte);
                     }
                 } else {
-                    try buffer.append(' ');
+                    try buffer.append(allocator, ' ');
                 }
             }
             if (y + 1 < self.size.height) {
-                try buffer.append('\n');
+                try buffer.append(allocator, '\n');
             }
         }
 
-        return try buffer.toOwnedSlice();
+        return try buffer.toOwnedSlice(allocator);
     }
 };
 

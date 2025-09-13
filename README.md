@@ -1,4 +1,4 @@
-xitui is a library for making TUIs in Zig.
+xitui is a library for making TUIs in Zig (requires version 0.15.1).
 
 * Includes a widget and focus system.
 * Widgets are put in a union type defined by the user, rather than using dynamic dispatch.

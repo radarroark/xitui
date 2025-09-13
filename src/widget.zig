@@ -385,28 +385,28 @@ pub fn TextBox(comptime Widget: type) type {
             border_style: ?BorderStyle,
             wrap_kind: WrapKind,
         ) !TextBox(Widget) {
-            var lines = std.ArrayList([]const u8).init(allocator);
+            var lines = std.ArrayList([]const u8){};
             errdefer {
                 for (lines.items) |line| {
                     allocator.free(line);
                 }
-                lines.deinit();
+                lines.deinit(allocator);
             }
 
             {
-                var line = std.ArrayList(u8).init(allocator);
-                errdefer line.deinit();
+                var line = std.ArrayList(u8){};
+                errdefer line.deinit(allocator);
 
                 var utf8 = (try std.unicode.Utf8View.init(content)).iterator();
                 while (utf8.nextCodepointSlice()) |char| {
                     if (std.mem.eql(u8, char, "\n")) {
-                        try lines.append(try line.toOwnedSlice());
+                        try lines.append(allocator, try line.toOwnedSlice(allocator));
                     } else {
-                        try line.appendSlice(char);
+                        try line.appendSlice(allocator, char);
                     }
 
                     if (std.mem.eql(u8, utf8.peek(1), "")) {
-                        try lines.append(try line.toOwnedSlice());
+                        try lines.append(allocator, try line.toOwnedSlice(allocator));
                     }
                 }
             }
@@ -435,7 +435,7 @@ pub fn TextBox(comptime Widget: type) type {
             for (self.lines.items) |line| {
                 self.allocator.free(line);
             }
-            self.lines.deinit();
+            self.lines.deinit(self.allocator);
         }
 
         pub fn build(self: *TextBox(Widget), constraint: layout.Constraint, root_focus: *Focus) !void {
@@ -451,23 +451,23 @@ pub fn TextBox(comptime Widget: type) type {
                             for (self.lines.items) |line| {
                                 self.allocator.free(line);
                             }
-                            self.lines.clearAndFree();
+                            self.lines.clearAndFree(self.allocator);
 
-                            var line = std.ArrayList(u8).init(self.allocator);
-                            errdefer line.deinit();
+                            var line = std.ArrayList(u8){};
+                            errdefer line.deinit(self.allocator);
 
                             var utf8 = (try std.unicode.Utf8View.init(self.content)).iterator();
                             while (utf8.nextCodepointSlice()) |char| {
                                 if (std.mem.eql(u8, char, "\n")) {
-                                    try self.lines.append(try line.toOwnedSlice());
+                                    try self.lines.append(self.allocator, try line.toOwnedSlice(self.allocator));
                                 } else {
-                                    try line.appendSlice(char);
+                                    try line.appendSlice(self.allocator, char);
                                 }
 
                                 if (std.mem.eql(u8, utf8.peek(1), "")) {
-                                    try self.lines.append(try line.toOwnedSlice());
+                                    try self.lines.append(self.allocator, try line.toOwnedSlice(self.allocator));
                                 } else if (try std.unicode.utf8CountCodepoints(line.items) + (border_size * 2) == max_width) {
-                                    try self.lines.append(try line.toOwnedSlice());
+                                    try self.lines.append(self.allocator, try line.toOwnedSlice(self.allocator));
                                 }
                             }
                         }
