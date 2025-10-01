@@ -85,7 +85,7 @@ const WidgetList = struct {
         }
 
         {
-            var text_box = try wgt.TextBox(Widget).init(allocator, "this is another TextBox", .single, .none);
+            var text_box = try wgt.TextBox(Widget).init(allocator, "this is a\nmulti-line TextBox", .single, .none);
             errdefer text_box.deinit();
             text_box.getFocus().focusable = true;
             try inner_box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .min_size = null });
