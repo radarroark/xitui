@@ -404,11 +404,8 @@ pub fn TextBox(comptime Widget: type) type {
                     } else {
                         try line.appendSlice(allocator, char);
                     }
-
-                    if (std.mem.eql(u8, utf8.peek(1), "")) {
-                        try lines.append(allocator, try line.toOwnedSlice(allocator));
-                    }
                 }
+                try lines.append(allocator, try line.toOwnedSlice(allocator));
             }
 
             var box = try Box(Widget).init(allocator, border_style, .vert);
