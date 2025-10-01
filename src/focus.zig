@@ -12,7 +12,6 @@ pub const Focus = struct {
 
     const Child = struct {
         parent_id: usize,
-        focusable: bool,
         focus: *Focus,
         rect: layout.URect,
     };
@@ -36,7 +35,6 @@ pub const Focus = struct {
     pub fn addChild(self: *Focus, child: *Focus, size: layout.Size, target_x: usize, target_y: usize) !void {
         try self.children.put(child.id, .{
             .parent_id = self.id,
-            .focusable = child.focusable,
             .focus = child,
             .rect = .{ .x = target_x, .y = target_y, .size = size },
         });
@@ -45,7 +43,6 @@ pub const Focus = struct {
             const grandchild = entry.value_ptr.*;
             try self.children.put(entry.key_ptr.*, .{
                 .parent_id = grandchild.parent_id,
-                .focusable = grandchild.focusable,
                 .focus = grandchild.focus,
                 .rect = .{ .x = target_x + grandchild.rect.x, .y = target_y + grandchild.rect.y, .size = grandchild.rect.size },
             });
@@ -60,7 +57,7 @@ pub const Focus = struct {
         var id = grandchild_id;
         // find the nearest child to grandchild_id that is focusable
         while (self.children.get(id)) |child| {
-            if (child.focusable) {
+            if (child.focus.focusable) {
                 break;
             } else if (child.focus.child_id) |next_child_id| {
                 id = next_child_id;
