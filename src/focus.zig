@@ -3,11 +3,17 @@ const layout = @import("./layout.zig");
 
 var next_id: usize = 0;
 
+pub const FocusKind = union(enum) {
+    none,
+    focusable,
+    editable: struct { x: u16, y: u16 },
+};
+
 pub const Focus = struct {
     id: usize,
     child_id: ?usize,
     grandchild_id: ?usize,
-    focusable: bool,
+    focus_kind: FocusKind,
     children: std.AutoHashMap(usize, Child),
 
     const Child = struct {
@@ -23,7 +29,7 @@ pub const Focus = struct {
             .id = id,
             .child_id = null,
             .grandchild_id = null,
-            .focusable = false,
+            .focus_kind = .none,
             .children = std.AutoHashMap(usize, Child).init(allocator),
         };
     }
@@ -57,7 +63,7 @@ pub const Focus = struct {
         var id = grandchild_id;
         // find the nearest child to grandchild_id that is focusable
         while (self.children.get(id)) |child| {
-            if (child.focus.focusable) {
+            if (child.focus.focus_kind != .none) {
                 break;
             } else if (child.focus.child_id) |next_child_id| {
                 id = next_child_id;

@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const inp = @import("./input.zig");
 const Size = @import("./layout.zig").Size;
 const grd = @import("./grid.zig");
+const Focus = @import("./focus.zig").Focus;
 
 const write_buffer_size = 4096;
 
@@ -594,6 +595,25 @@ pub const Terminal = struct {
             }
         }
 
+        try self.core.writer.interface.flush();
+    }
+
+    pub fn updateCursor(self: *Terminal, focus: *const Focus) !void {
+        if (focus.grandchild_id) |id| {
+            if (focus.children.get(id)) |child| {
+                switch (child.focus.focus_kind) {
+                    .none, .focusable => {},
+                    .editable => |cursor| {
+                        try showCursor(&self.core.writer.interface);
+                        try moveCursor(&self.core.writer.interface, child.rect.x + cursor.x, child.rect.y + cursor.y);
+                        try self.core.writer.interface.flush();
+                        return;
+                    },
+                }
+            }
+        }
+
+        try hideCursor(&self.core.writer.interface);
         try self.core.writer.interface.flush();
     }
 };

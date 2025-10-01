@@ -36,6 +36,9 @@ pub fn main() !void {
         // render to tty
         try terminal.render(&root, &last_grid, &last_size);
 
+        // show cursor if editable text box is in focus
+        try terminal.updateCursor(root.getFocus());
+
         // process any inputs
         while (try terminal.readKey()) |key| {
             switch (key) {
@@ -80,14 +83,21 @@ const WidgetList = struct {
         {
             var text_box = try wgt.TextBox(Widget).init(allocator, "this is a TextBox", .single, .none);
             errdefer text_box.deinit();
-            text_box.getFocus().focusable = true;
+            text_box.getFocus().focus_kind = .focusable;
             try inner_box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .min_size = null });
         }
 
         {
             var text_box = try wgt.TextBox(Widget).init(allocator, "this is a\nmulti-line TextBox", .single, .none);
             errdefer text_box.deinit();
-            text_box.getFocus().focusable = true;
+            text_box.getFocus().focus_kind = .focusable;
+            try inner_box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .min_size = null });
+        }
+
+        {
+            var text_box = try wgt.TextBox(Widget).init(allocator, "this is an editable TextBox", .single_dashed, .none);
+            errdefer text_box.deinit();
+            text_box.getFocus().focus_kind = .{ .editable = .{ .x = 1, .y = 1 } };
             try inner_box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .min_size = null });
         }
 
@@ -105,9 +115,12 @@ const WidgetList = struct {
     pub fn build(self: *WidgetList, constraint: layout.Constraint, root_focus: *Focus) !void {
         self.clearGrid();
         const children = &self.scroll.child.box.children;
-        for (children.keys(), children.values()) |id, *commit| {
-            commit.widget.text_box.border_style = if (self.getFocus().child_id == id)
-                (if (root_focus.grandchild_id == id) .double else .single)
+        for (children.keys(), children.values()) |id, *item| {
+            item.widget.text_box.border_style = if (self.getFocus().child_id == id)
+                (if (item.widget.getFocus().focus_kind == .editable)
+                    (if (root_focus.grandchild_id == id) .double_dashed else .single_dashed)
+                else
+                    (if (root_focus.grandchild_id == id) .double else .single))
             else
                 .hidden;
         }
