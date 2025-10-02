@@ -101,6 +101,13 @@ const WidgetList = struct {
             try inner_box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .min_size = null });
         }
 
+        {
+            var text_box = try wgt.TextBox(Widget).init(allocator, "this is a\nmulti-line\neditable TextBox", .single_dashed, .none);
+            errdefer text_box.deinit();
+            text_box.getFocus().focus_kind = .{ .editable = .{ .x = 1, .y = 1 } };
+            try inner_box.children.put(text_box.getFocus().id, .{ .widget = .{ .text_box = text_box }, .rect = null, .min_size = null });
+        }
+
         if (inner_box.children.count() > 0) {
             self.scroll.getFocus().child_id = inner_box.children.keys()[0];
         }
@@ -164,7 +171,7 @@ const WidgetList = struct {
                             }
                         }
                     },
-                    else => {},
+                    else => try children.values()[index].widget.input(key, root_focus),
                 }
 
                 if (index != current_index) {

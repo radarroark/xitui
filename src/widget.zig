@@ -487,7 +487,29 @@ pub fn TextBox(comptime Widget: type) type {
         }
 
         pub fn input(self: *TextBox(Widget), key: inp.Key, root_focus: *Focus) !void {
-            try self.box.input(key, root_focus);
+            switch (self.getFocus().focus_kind) {
+                .none, .focusable => try self.box.input(key, root_focus),
+                .editable => |*cursor| {
+                    const border_size: usize = if (self.border_style) |_| 1 else 0;
+                    const grid_size = (self.getGrid() orelse return error.GridNotFound).size;
+
+                    switch (key) {
+                        .arrow_right => if (cursor.x < grid_size.width - border_size - 1) {
+                            cursor.x += 1;
+                        } else if (cursor.y < grid_size.height - border_size - 1) {
+                            cursor.x = border_size;
+                            cursor.y += 1;
+                        },
+                        .arrow_left => if (cursor.x > border_size) {
+                            cursor.x -= 1;
+                        } else if (cursor.y > border_size) {
+                            cursor.x = grid_size.width - border_size - 1;
+                            cursor.y -= 1;
+                        },
+                        else => {},
+                    }
+                },
+            }
         }
 
         pub fn clearGrid(self: *TextBox(Widget)) void {

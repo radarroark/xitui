@@ -6,7 +6,7 @@ var next_id: usize = 0;
 pub const FocusKind = union(enum) {
     none,
     focusable,
-    editable: struct { x: u16, y: u16 },
+    editable: struct { x: usize, y: usize },
 };
 
 pub const Focus = struct {
