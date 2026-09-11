@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const inp = @import("./input.zig");
 const Size = @import("./layout.zig").Size;
 const grd = @import("./grid.zig");
+const wth = @import("./width.zig");
 
 const write_buffer_size = 4096;
 
@@ -823,10 +824,10 @@ pub fn renderToWriter(
                 for (0..grid.size.width) |x| {
                     const cell = (try grid.cell(x, y)).*;
                     if (cell.rune) |rune| {
-                        try writeRuneAt(writer, rune, cell.style, x, y, size.height);
+                        try writeRuneAt(writer, rune, cell.style, x, y, size);
                     } else if (!cell.continuation and !cell.style.eql(.{})) {
                         // empty cells can still have a background or inversion
-                        try writeAt(writer, " ", cell.style, x, y, size.height);
+                        try writeAt(writer, " ", cell.style, x, y, size);
                     }
                 }
             }
@@ -842,14 +843,14 @@ pub fn renderToWriter(
 
                     grid_changed = true;
                     if (cell.rune) |rune| {
-                        try writeRuneAt(writer, rune, cell.style, x, y, size.height);
+                        try writeRuneAt(writer, rune, cell.style, x, y, size);
                         continue;
                     }
 
                     // a continuation column is occupied by the wide rune to
                     // its left, not empty — clearing it would chop the glyph
                     if (!cell.continuation) {
-                        try writeAt(writer, " ", cell.style, x, y, size.height);
+                        try writeAt(writer, " ", cell.style, x, y, size);
                     }
                 }
             }
@@ -870,14 +871,20 @@ pub fn renderToWriter(
     return grid_changed;
 }
 
-fn writeRuneAt(writer: *std.Io.Writer, rune: u21, style: grd.Grid.Style, x: usize, y: usize, height: usize) !void {
+fn writeRuneAt(writer: *std.Io.Writer, rune: u21, style: grd.Grid.Style, x: usize, y: usize, size: Size) !void {
+    if (x >= size.width or y >= size.height) return;
+    // blank clipped wide runes so old text doesn't linger
+    if (wth.cellWidth(rune) > size.width - x) {
+        return writeAt(writer, " ", style, x, y, size);
+    }
     var encoded: [4]u8 = undefined;
     const len = try std.unicode.utf8Encode(rune, &encoded);
-    try writeAt(writer, encoded[0..len], style, x, y, height);
+    try writeAt(writer, encoded[0..len], style, x, y, size);
 }
 
-fn writeAt(writer: *std.Io.Writer, txt: []const u8, style: grd.Grid.Style, x: usize, y: usize, height: usize) !void {
-    if (y >= height) return;
+fn writeAt(writer: *std.Io.Writer, txt: []const u8, style: grd.Grid.Style, x: usize, y: usize, size: Size) !void {
+    // off-screen cursor moves clamp to the edge and corrupt visible cells
+    if (x >= size.width or y >= size.height) return;
     try moveCursor(writer, x, y);
     // each cell re-establishes its own style, so a single reset afterward is
     // enough to keep it from bleeding into the next cell we move to.
