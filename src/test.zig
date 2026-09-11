@@ -677,13 +677,13 @@ test "StreamTerminal renders a widget tree" {
     const rendered = output.written()[startup_len..];
     // we should see the rune 'h' from "hello" written somewhere in the output
     try std.testing.expect(std.mem.indexOfScalar(u8, rendered, 'h') != null);
-    // and a cursor-move CSI ("\x1B[r;cH") since render positions every rune
+    // and a cursor move for the first run
     try std.testing.expect(std.mem.indexOf(u8, rendered, "\x1B[") != null);
 
     const unchanged_start = output.written().len;
     try std.testing.expect(!try terminal.render(&widget));
     try std.testing.expectEqualStrings(
-        "\x1B[?2026h\x1B[?2026l",
+        "",
         output.written()[unchanged_start..],
     );
 

@@ -595,8 +595,7 @@ pub const TextBox = struct {
         }
 
         const max_inner_width = if (constraint.max_size.width) |width| width - border_size * 2 else null;
-        const wrap_kind: WrapKind = if (max_inner_width == null) .none else self.options.wrap_kind;
-        try self.rebuildLines(allocator, wrap_kind, max_inner_width);
+        try self.rebuildLines(allocator, max_inner_width);
 
         const focused = root_focus.grandchild_id == self.getFocus().id;
         const border_style: ?draw.BorderStyle = if (self.options.border_style) |base| switch (base) {
@@ -682,12 +681,13 @@ pub const TextBox = struct {
         return codepoints;
     }
 
-    fn rebuildLines(self: *TextBox, allocator: std.mem.Allocator, wrap_kind: WrapKind, max_width: ?usize) !void {
+    fn rebuildLines(self: *TextBox, allocator: std.mem.Allocator, max_width: ?usize) !void {
         self.lines.clearRetainingCapacity();
-        switch (wrap_kind) {
+        const width = max_width orelse return self.wrapChars(allocator, null);
+        switch (self.options.wrap_kind) {
             .none => try self.wrapChars(allocator, null),
-            .char => try self.wrapChars(allocator, max_width.?),
-            .word => try self.wrapWords(allocator, max_width.?),
+            .char => try self.wrapChars(allocator, width),
+            .word => try self.wrapWords(allocator, width),
         }
     }
 
@@ -1029,9 +1029,9 @@ pub const TextInput = struct {
             // land at most on the cursor itself — a wide cursor rune in
             // a one-column window just doesn't render.
             const cursor_w: usize = if (self.cursor < self.content.items.len) self.contentCellWidth(self.cursor) else 1;
-            while (self.scroll_offset < self.cursor and
-                self.columnsBetween(self.scroll_offset, self.cursor) + cursor_w > inner_width)
-            {
+            var cursor_columns = self.columnsBetween(self.scroll_offset, self.cursor) + cursor_w;
+            while (self.scroll_offset < self.cursor and cursor_columns > inner_width) {
+                cursor_columns -= self.contentCellWidth(self.scroll_offset);
                 self.scroll_offset += 1;
             }
         }

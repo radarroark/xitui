@@ -164,7 +164,8 @@ pub const Grid = struct {
         const target = try self.cell(x, y);
         self.blankPartner(x, y);
         target.continuation = false;
-        if (rune != null and wth.cellWidth(rune.?) == 2) {
+        const is_wide = if (rune) |cp| wth.cellWidth(cp) == 2 else false;
+        if (is_wide) {
             if (self.cell(x + 1, y)) |continuation| {
                 self.blankPartner(x + 1, y);
                 target.rune = rune;

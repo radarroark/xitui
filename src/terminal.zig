@@ -766,143 +766,101 @@ pub fn renderToWriter(
 
     const current_grid = root_widget.getGrid();
     var force_refresh = size_changed;
-    if (!force_refresh) {
-        if (current_grid) |grid| {
-            if (state.last_grid) |last_grid| {
-                force_refresh = last_grid.size.width != grid.size.width or last_grid.size.height != grid.size.height;
-            } else {
-                force_refresh = true;
-            }
-        } else if (state.last_grid != null) {
+    // only allocate a snapshot when its dimensions change
+    if (current_grid) |grid| {
+        const needs_snapshot = if (state.last_grid) |last_grid|
+            last_grid.size.width != grid.size.width or last_grid.size.height != grid.size.height
+        else
+            true;
+        if (needs_snapshot) {
+            state.replaceGrid(try grd.Grid.init(state.allocator, grid.size));
             force_refresh = true;
         }
+    } else if (state.last_grid != null) {
+        state.replaceGrid(null);
+        force_refresh = true;
+    }
+
+    var started = false;
+    // track terminal state to avoid per-cell escapes
+    var style: grd.Grid.Style = .{};
+    errdefer {
+        // a partial frame needs a full redraw, including reused snapshot cells
+        state.last_size = null;
+        if (started) {
+            attributeReset(writer) catch {};
+            writer.writeAll("\x1B[?2026l") catch {};
+            writer.flush() catch {};
+        }
+    }
+
+    if (force_refresh) {
+        started = true;
+        try writer.writeAll("\x1B[?2026h");
+        try clearRect(writer, 0, 0, size);
     }
 
     var grid_changed = force_refresh;
-    if (!grid_changed) {
-        if (current_grid) |grid| {
-            const last_grid = state.last_grid.?;
+    if (current_grid) |grid| {
+        if (state.last_grid) |last_grid| {
+            // compare and update the snapshot in one pass
             for (0..grid.size.height) |y| {
-                for (0..grid.size.width) |x| {
-                    const cell = (try grid.cell(x, y)).*;
-                    const last_cell = (try last_grid.cell(x, y)).*;
-                    if (!cell.eql(last_cell)) {
-                        grid_changed = true;
-                        break;
-                    }
-                }
-                if (grid_changed) break;
-            }
-        }
-    }
-
-    // prepare the next snapshot before changing the screen. the old snapshot
-    // remains valid if allocation or rendering fails.
-    var next_grid: ?grd.Grid = null;
-    if (grid_changed) {
-        if (current_grid) |grid| {
-            next_grid = try grid.clone(state.allocator);
-        }
-    }
-    errdefer if (next_grid) |*grid| grid.deinit();
-
-    // start escape code for synchronized output
-    // everything in between the start and stop code is printed at once to prevent flickering
-    try writer.writeAll("\x1B[?2026h");
-    var sync_open = true;
-    errdefer if (sync_open) {
-        writer.writeAll("\x1B[?2026l") catch {};
-        writer.flush() catch {};
-    };
-
-    if (force_refresh) {
-        try clearRect(writer, 0, 0, size);
-
-        // render the grid
-        if (current_grid) |grid| {
-            for (0..grid.size.height) |y| {
-                for (0..grid.size.width) |x| {
-                    const cell = (try grid.cell(x, y)).*;
-                    if (cell.rune) |rune| {
-                        try writeRuneAt(writer, rune, cell.style, x, y, size);
-                    } else if (!cell.continuation and !cell.style.eql(.{})) {
-                        // empty cells can still have a background or inversion
-                        try writeAt(writer, " ", cell.style, x, y, size);
-                    }
-                }
-            }
-        }
-    } else if (grid_changed) {
-        if (current_grid) |grid| {
-            const last_grid = state.last_grid.?;
-            for (0..grid.size.height) |y| {
-                for (0..grid.size.width) |x| {
-                    const cell = (try grid.cell(x, y)).*;
-                    const last_cell = (try last_grid.cell(x, y)).*;
-                    if (cell.eql(last_cell)) continue;
-
+                // force a cursor move to cancel any pending wrap
+                var cursor_x: ?usize = null;
+                const row_start = y * grid.size.width;
+                const row = grid.cells[row_start..][0..grid.size.width];
+                const last_row = last_grid.cells[row_start..][0..grid.size.width];
+                for (row, last_row, 0..) |cell, *last_cell, x| {
+                    if (!force_refresh and cell.eql(last_cell.*)) continue;
                     grid_changed = true;
-                    if (cell.rune) |rune| {
-                        try writeRuneAt(writer, rune, cell.style, x, y, size);
-                        continue;
+                    last_cell.* = cell;
+
+                    if (cell.continuation) continue;
+                    if (force_refresh and cell.rune == null and cell.style.eql(.{})) continue;
+                    // off-screen cursor moves clamp to the edge
+                    if (x >= size.width or y >= size.height) continue;
+                    var rune = cell.rune orelse ' ';
+                    if (wth.cellWidth(rune) > size.width - x) rune = ' ';
+                    // keep unchanged frames silent
+                    if (!started) {
+                        started = true;
+                        try writer.writeAll("\x1B[?2026h");
                     }
 
-                    // a continuation column is occupied by the wide rune to
-                    // its left, not empty — clearing it would chop the glyph
-                    if (!cell.continuation) {
-                        try writeAt(writer, " ", cell.style, x, y, size);
+                    // only trust ascii cursor advances; unicode widths vary by terminal
+                    const advances = rune >= 0x20 and rune < 0x7f;
+                    if (!advances or cursor_x != x) {
+                        try moveCursor(writer, x, y);
                     }
+                    if (!style.eql(cell.style)) {
+                        if (!style.eql(.{})) try attributeReset(writer);
+                        if (cell.style.inverted) try writer.writeAll("\x1B[7m");
+                        if (cell.style.fg) |c| {
+                            try writeControl(writer, "\x1B[38;2;{d};{d};{d}m", .{ c.r, c.g, c.b });
+                        }
+                        if (cell.style.bg) |c| {
+                            try writeControl(writer, "\x1B[48;2;{d};{d};{d}m", .{ c.r, c.g, c.b });
+                        }
+                        style = cell.style;
+                    }
+
+                    var encoded: [4]u8 = undefined;
+                    const len = try std.unicode.utf8Encode(rune, &encoded);
+                    try writer.writeAll(encoded[0..len]);
+                    cursor_x = if (advances) x + 1 else null;
                 }
             }
         }
     }
 
-    // stop escape code for synchronized output
-    try writer.writeAll("\x1B[?2026l");
-    sync_open = false;
-    try writer.flush();
-
+    if (started) {
+        if (!style.eql(.{})) try attributeReset(writer);
+        try writer.writeAll("\x1B[?2026l");
+        started = false;
+        try writer.flush();
+    }
     state.last_size = size;
-    if (grid_changed) {
-        state.replaceGrid(next_grid);
-        next_grid = null;
-    }
-
     return grid_changed;
-}
-
-fn writeRuneAt(writer: *std.Io.Writer, rune: u21, style: grd.Grid.Style, x: usize, y: usize, size: Size) !void {
-    if (x >= size.width or y >= size.height) return;
-    // blank clipped wide runes so old text doesn't linger
-    if (wth.cellWidth(rune) > size.width - x) {
-        return writeAt(writer, " ", style, x, y, size);
-    }
-    var encoded: [4]u8 = undefined;
-    const len = try std.unicode.utf8Encode(rune, &encoded);
-    try writeAt(writer, encoded[0..len], style, x, y, size);
-}
-
-fn writeAt(writer: *std.Io.Writer, txt: []const u8, style: grd.Grid.Style, x: usize, y: usize, size: Size) !void {
-    // off-screen cursor moves clamp to the edge and corrupt visible cells
-    if (x >= size.width or y >= size.height) return;
-    try moveCursor(writer, x, y);
-    // each cell re-establishes its own style, so a single reset afterward is
-    // enough to keep it from bleeding into the next cell we move to.
-    var styled = false;
-    if (style.inverted) {
-        try writer.writeAll("\x1B[7m");
-        styled = true;
-    }
-    if (style.fg) |c| {
-        try writeControl(writer, "\x1B[38;2;{d};{d};{d}m", .{ c.r, c.g, c.b });
-        styled = true;
-    }
-    if (style.bg) |c| {
-        try writeControl(writer, "\x1B[48;2;{d};{d};{d}m", .{ c.r, c.g, c.b });
-        styled = true;
-    }
-    try writer.writeAll(txt);
-    if (styled) try writer.writeAll("\x1B[0m");
 }
 
 pub fn moveCursor(writer: *std.Io.Writer, x: usize, y: usize) !void {
